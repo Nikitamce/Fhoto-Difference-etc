@@ -1,0 +1,17 @@
+{
+  "name": "photocheck",
+  "version": "1.0.0",
+  "description": "Visual Photo Comparison Application with Synchronized Pan & Zoom up to 1000%",
+  "main": "index.html",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "serve": "npx serve ."
+  },
+  "devDependencies": {
+    "vite": "^5.0.0",
+    "vite-plugin-singlefile": "^2.3.3"
+  }
+}

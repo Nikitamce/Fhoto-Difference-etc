@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Production build output
+dist/
+
+# Local logs & IDE metadata
+*.log
+.DS_Store
+Thumbs.db
+.gemini/
+.idea/
+.vscode/
