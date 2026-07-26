@@ -5,6 +5,8 @@
 **PhotoCheck** is a powerful, privacy-focused, offline-first web application for precise visual image comparison, alignment, and pixel-difference analysis. Built for game developers, QA engineers, graphic designers, digital archivists, and photography enthusiasts.
 
 It allows you to load two images, align them using AI or multi-point geometric transformations, and spot even the subtlest visual differences using curtain sliders, fade overlays, fast blinking, and pixel difference highlighting.
+<img width="1857" height="907" alt="Screenshot 2026-07-26 at 17-16-55 PhotoCheck — Visual Photo Comparison" src="https://github.com/user-attachments/assets/ac4c505f-2452-4573-8fb7-d85f52e69762" />
+<img width="1857" height="907" alt="Screenshot 2026-07-26 at 17-16-38 PhotoCheck — Visual Photo Comparison" src="https://github.com/user-attachments/assets/5e0d7a67-0d3f-4181-ae30-ff71a70988bb" />
 
 ---
 
