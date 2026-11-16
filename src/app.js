@@ -420,26 +420,29 @@ document.addEventListener("DOMContentLoaded", () => {
     toast.id = "status-toast";
     toast.style.cssText = `
       position: fixed;
-      top: 56px;
+      top: 76px;
       left: 50%;
       transform: translateX(-50%);
-      background: rgba(17, 24, 39, 0.92);
-      backdrop-filter: blur(10px);
-      color: #f8fafc;
-      padding: 4px 14px;
-      height: 28px;
-      border-radius: 14px;
-      font-size: 0.76rem;
-      font-weight: 500;
-      border: 1px solid rgba(99, 102, 241, 0.5);
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+      background: rgba(14, 22, 37, 0.94);
+      backdrop-filter: blur(16px);
+      color: #f3f6fc;
+      padding: 8px 15px;
+      min-height: 34px;
+      max-width: min(560px, calc(100vw - 32px));
+      border-radius: 12px;
+      font-size: 0.77rem;
+      font-weight: 550;
+      border: 1px solid rgba(155, 140, 255, 0.38);
+      box-shadow: 0 12px 34px rgba(0, 0, 0, 0.34);
       z-index: 9999;
       white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
       pointer-events: none;
       transition: opacity 0.3s ease;
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 9px;
     `;
 
     if (isLoading) {
@@ -448,8 +451,8 @@ document.addEventListener("DOMContentLoaded", () => {
         display: inline-block;
         width: 10px;
         height: 10px;
-        border: 2px solid rgba(99,102,241,0.3);
-        border-top-color: #6366f1;
+        border: 2px solid rgba(155,140,255,0.24);
+        border-top-color: #9b8cff;
         border-radius: 50%;
         animation: spin 0.7s linear infinite;
       `;
