@@ -1,1214 +1,2273 @@
 import { i18n } from "./i18n.js";
+import { settings } from "./settings.js";
 import { SynchronizedViewer } from "./viewer.js";
 import { ModesController } from "./modes.js";
 import { computeAutoEdgeAlignment } from "./auto_align.js";
 import { loadOpenCV, computeOpenCVAlignment } from "./opencv_align.js";
+import {
+  formatBytes,
+  preparePixelBuffer,
+  sampleCachedPixel,
+  parseImageMetadata,
+  computeComparisonMetrics,
+} from "./metadata.js";
+import { exportComparison } from "./exporter.js";
 
-document.addEventListener("DOMContentLoaded", () => {
-  // Initialize i18n
-  i18n.updateUI();
+const SIMILARITY_CIRCUMFERENCE = 2 * Math.PI * 20; // r = 20 in SVG ring
 
-  // --- 1. DOM Elements & State Variables ---
-  const container = document.getElementById("viewer-container");
-  const workspace = document.getElementById("workspace");
+const state = {
+  imgA: null,
+  imgB: null,
+  urlA: null,
+  urlB: null,
+  fileA: null,
+  fileB: null,
+  metaA: null,
+  metaB: null,
+  sourceHintA: "",
+  sourceHintB: "",
 
-  // State for loaded images
-  let imageASrc = null;
-  let imageBSrc = null;
-  let imgAObj = null;
-  let imgBObj = null;
-  let fileObjA = null;
-  let fileObjB = null;
+  isPanning: false,
+  panPane: "both",
+  panLastX: 0,
+  panLastY: 0,
 
-  // Zoom & Scale UI elements
-  const zoomRange = document.getElementById("zoom-range");
-  const zoomVal = document.getElementById("zoom-val");
-  const scaleARange = document.getElementById("scale-a-range");
-  const scaleAInput = document.getElementById("scale-a-input");
-  const scaleBRange = document.getElementById("scale-b-range");
-  const scaleBInput = document.getElementById("scale-b-input");
+  showFilenames: true,
+  quickBarCollapsed: false,
 
-  // Collapsible panels
-  const panelLeft = document.getElementById("panel-left");
-  const btnCollapseLeft = document.getElementById("btn-collapse-left");
-  const btnCloseLeftInner = document.getElementById("btn-close-left-inner");
-  const btnRestoreLeft = document.getElementById("btn-restore-left");
+  isFlashing: false,
+  opacityBeforeFlash: 0.5,
+  isBlinking: false,
+  blinkIntervalId: null,
+  blinkMs: 1000,
 
-  const panelRight = document.getElementById("panel-right");
-  const btnCollapseRight = document.getElementById("btn-collapse-right");
-  const btnCloseRightInner = document.getElementById("btn-close-right-inner");
-  const btnRestoreRight = document.getElementById("btn-restore-right");
+  pointModeCount: 0, // 0 | 1 | 2 | 3 | 4
+  pointsA: [],
+  pointsB: [],
 
-  const panelBottom = document.getElementById("panel-bottom");
-  const btnCollapseBottom = document.getElementById("btn-collapse-bottom");
-  const btnRestoreBottom = document.getElementById("btn-restore-bottom");
+  metricsTimer: null,
+  probeRafId: null,
+  lastProbeEvent: null,
+};
 
-  const quickBar = document.getElementById("quick-actions-bar");
-  const btnCollapseQuick = document.getElementById("btn-collapse-quick");
-  const btnRestoreQuick = document.getElementById("btn-restore-quick");
+const dom = {};
+let viewer;
+let modesCtrl;
 
-  // Dropdowns
-  const toolsDropdownBtn = document.getElementById("tools-dropdown-btn");
-  const toolsDropdownMenu = document.getElementById("tools-dropdown-menu");
-  const langDropdownBtn = document.getElementById("lang-dropdown-btn");
-  const langDropdownMenu = document.getElementById("lang-dropdown-menu");
+function cacheDOM() {
+  const ids = [
+    "app-shell",
+    "btn-collapse-left",
+    "btn-close-left-inner",
+    "btn-restore-left",
+    "panel-left",
+    "btn-collapse-right",
+    "btn-close-right-inner",
+    "btn-restore-right",
+    "panel-right",
+    "btn-collapse-bottom",
+    "btn-restore-bottom",
+    "panel-bottom",
+    "mode-selector",
+    "group-slider-controls",
+    "btn-slider-vertical",
+    "btn-slider-horizontal",
+    "btn-zoom-out",
+    "zoom-range",
+    "btn-zoom-in",
+    "btn-zoom-presets",
+    "zoom-val",
+    "btn-zoom-fit",
+    "btn-zoom-11",
+    "lang-dropdown-btn",
+    "btn-settings",
+    "btn-help",
+    "btn-auto-edge",
+    "btn-auto-opencv",
+    "btn-match-sizes",
+    "btn-center",
+    "btn-target-none",
+    "btn-sidebar-align-a",
+    "btn-sidebar-align-b",
+    "btn-nudge-up",
+    "btn-nudge-down",
+    "btn-nudge-left",
+    "btn-nudge-right",
+    "offset-val-x",
+    "offset-val-y",
+    "btn-1point-align",
+    "btn-2point-align",
+    "btn-3point-align",
+    "btn-4point-align",
+    "scale-a-range",
+    "scale-a-input",
+    "btn-reset-scale-a",
+    "scale-b-range",
+    "scale-b-input",
+    "btn-reset-scale-b",
+    "btn-reset-all",
+    "workspace",
+    "viewer-container",
+    "empty-state-overlay",
+    "empty-pick-a",
+    "empty-pick-b",
+    "btn-load-demo",
+    "filename-badge-a",
+    "badge-name-a",
+    "filename-badge-b",
+    "badge-name-b",
+    "point-align-banner",
+    "point-align-instruction",
+    "btn-undo-point",
+    "btn-cancel-2point",
+    "pixel-probe-hud",
+    "probe-coords",
+    "probe-swatch-a",
+    "probe-rgb-a",
+    "probe-swatch-b",
+    "probe-rgb-b",
+    "probe-delta-val",
+    "quick-actions-bar",
+    "btn-collapse-quick",
+    "btn-restore-quick",
+    "btn-quick-fit",
+    "btn-quick-actual",
+    "btn-swap",
+    "btn-quick-sync-zoom",
+    "btn-sidebar-filenames",
+    "btn-toggle-probe",
+    "btn-quick-upload",
+    "btn-recalc-metrics",
+    "similarity-ring-arc",
+    "similarity-score-val",
+    "metric-changed-val",
+    "metric-maxdelta-val",
+    "metric-mae-val",
+    "btn-replace-a",
+    "btn-replace-b",
+    "thumb-a",
+    "thumb-b",
+    "thumb-placeholder-a",
+    "thumb-placeholder-b",
+    "info-name-a",
+    "info-name-b",
+    "info-path-a",
+    "info-path-b",
+    "info-res-a",
+    "info-res-b",
+    "info-fmt-a",
+    "info-fmt-b",
+    "info-size-a",
+    "info-size-b",
+    "info-date-a",
+    "info-date-b",
+    "opacity-range",
+    "opacity-val",
+    "btn-fade-0",
+    "btn-fade-25",
+    "btn-fade-50",
+    "btn-fade-75",
+    "btn-fade-100",
+    "btn-fade-flash",
+    "btn-auto-blink",
+    "blink-speed-range",
+    "blink-speed-input",
+    "diff-style-selector",
+    "diff-gain-range",
+    "diff-gain-val",
+    "channel-selector",
+    "meta-aspect-a",
+    "meta-aspect-b",
+    "meta-alpha-a",
+    "meta-alpha-b",
+    "meta-depth-a",
+    "meta-depth-b",
+    "meta-profile-a",
+    "meta-profile-b",
+    "meta-dpi-a",
+    "meta-dpi-b",
+    "meta-comp-a",
+    "meta-comp-b",
+    "meta-cam-a",
+    "meta-cam-b",
+    "meta-exp-a",
+    "meta-exp-b",
+    "dropzone-a",
+    "dropzone-b",
+    "file-input-a",
+    "file-input-b",
+    "file-input-pair",
+    "preview-a",
+    "preview-b",
+    "dropzone-title-a",
+    "dropzone-title-b",
+    "dropzone-hint-a",
+    "dropzone-hint-b",
+    "btn-swap-bottom",
+    "btn-compare-action",
+    "btn-export-action",
+    "lang-popover",
+    "zoom-popover",
+    "export-popover",
+    "settings-dialog",
+    "btn-close-settings",
+    "theme-system-resolved",
+    "setting-toggle-probe",
+    "setting-toggle-autohide-badges",
+    "setting-toggle-autometrics",
+    "btn-reset-settings",
+    "help-dialog",
+    "btn-close-help",
+    "toast-region",
+    "sr-announcer",
+  ];
 
-  // Opacity & Blink
-  const opacityRange = document.getElementById("opacity-range");
-  const opacityVal = document.getElementById("opacity-val");
-  const btnFadeFlash = document.getElementById("btn-fade-flash");
-  const btnAutoBlink = document.getElementById("btn-auto-blink");
-  const blinkSpeedRange = document.getElementById("blink-speed-range");
-  const blinkSpeedInput = document.getElementById("blink-speed-input");
-  const btnToggleDiff = document.getElementById("btn-toggle-diff");
-  const btnSliderVert = document.getElementById("btn-slider-vertical");
-  const btnSliderHoriz = document.getElementById("btn-slider-horizontal");
+  for (const id of ids) {
+    const prop = id.replace(/-([a-z0-9])/g, (_, ch) => ch.toUpperCase());
+    dom[prop] = document.getElementById(id);
+  }
+}
 
-  let isFlashing = false;
-  let flashInterval = null;
-  let isAutoBlinking = false;
-  let autoBlinkInterval = null;
-  let blinkSpeedMs = 1000;
-  let isDiffOverlay = false;
+/* ============================================================================
+   UI Feedback: Toasts & Screen Reader Announcer
+   ============================================================================ */
+const activeToasts = new Map();
 
-  // Alignment Tools
-  const btnAlignA = document.getElementById("btn-align-a");
-  const btnAlignB = document.getElementById("btn-align-b");
-  const btnAutoOpenCV = document.getElementById("btn-auto-opencv");
-  const btnAutoEdge = document.getElementById("btn-auto-edge");
-  const btn1PointAlign = document.getElementById("btn-1point-align");
-  const btn2PointAlign = document.getElementById("btn-2point-align");
-  const btn3PointAlign = document.getElementById("btn-3point-align");
-  const btn4PointAlign = document.getElementById("btn-4point-align");
-  const btnWarpAlign = document.getElementById("btn-warp-align");
-  const pointAlignBanner = document.getElementById("point-align-banner");
-  const pointAlignInstruction = document.getElementById("point-align-instruction");
-  const btnCancelPoint = document.getElementById("btn-cancel-2point");
+function announceSR(text) {
+  if (!dom.srAnnouncer || !text) return;
+  dom.srAnnouncer.textContent = "";
+  requestAnimationFrame(() => {
+    dom.srAnnouncer.textContent = text;
+  });
+}
 
-  let activePointsMode = 0; // 0=off, 1=1pt, 2=2pt, 3=3pt, 4=4pt
-  let pointsA = [];
-  let pointsB = [];
-  let currentActiveAlignBtn = null;
+function dismissToast(id) {
+  const toast = activeToasts.get(id);
+  if (!toast) return;
+  activeToasts.delete(id);
+  if (toast._timer) clearTimeout(toast._timer);
+  toast.classList.add("closing");
+  setTimeout(() => toast.remove(), 240);
+}
 
-  // Filename overlay badges
-  let filenameA = "sample_photo_a.png";
-  let filenameB = "sample_photo_b.png";
-  let showFilenames = true;
-  let statusToastTimer = null;
+function showToast(message, { duration = 2600, spinner = false, id = null } = {}) {
+  if (!dom.toastRegion) return null;
+  const key = id || `toast-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
-  // Mouse pan state
-  let isPanning = false;
-  let lastMouse = { x: 0, y: 0 };
-  let mouseDownPos = { x: 0, y: 0 };
-
-  // Modes controller & Viewer instances
-  let modesCtrl = null;
-  let viewer = null;
-
-  // --- 2. Function Declarations ---
-  function isImageFile(file) {
-    if (!file) return false;
-    if (file.type && file.type.startsWith("image/")) return true;
-    return /\.(jpe?g|png|gif|webp|svg|bmp|ico|tiff?|avif|heic|jfif)$/i.test(file.name || "");
+  let toast = id ? activeToasts.get(id) : null;
+  if (!toast) {
+    // Keep at most 2 visible toasts to avoid clutter
+    if (activeToasts.size >= 2) {
+      const oldestKey = activeToasts.keys().next().value;
+      if (oldestKey) dismissToast(oldestKey);
+    }
+    toast = document.createElement("div");
+    toast.className = "status-toast";
+    toast.setAttribute("role", "status");
+    dom.toastRegion.appendChild(toast);
+    activeToasts.set(key, toast);
   }
 
-  function loadSingleFile(file, callback) {
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      const src = evt.target.result;
-      const img = new Image();
-      img.onload = () => callback(src, img, file);
-      img.src = src;
+  toast.classList.remove("closing");
+  if (toast._timer) clearTimeout(toast._timer);
+
+  toast.innerHTML = "";
+  if (spinner) {
+    const sp = document.createElement("span");
+    sp.className = "toast-spinner";
+    sp.setAttribute("aria-hidden", "true");
+    toast.appendChild(sp);
+  }
+  const textSpan = document.createElement("span");
+  textSpan.textContent = message;
+  toast.appendChild(textSpan);
+
+  announceSR(message);
+
+  if (duration > 0) {
+    toast._timer = setTimeout(() => dismissToast(key), duration);
+  }
+  return key;
+}
+
+/* ============================================================================
+   Range Slider Custom Property Progress Sync & Dialog / Popover Fallbacks
+   ============================================================================ */
+function syncRangeVars(input) {
+  if (!input) return;
+  input.style.setProperty("--attr-min", input.min === "" ? "0" : input.min);
+  input.style.setProperty("--attr-max", input.max === "" ? "100" : input.max);
+  input.style.setProperty("--control-value", input.value);
+}
+
+function initAllRanges() {
+  document.querySelectorAll('input[type="range"].range-input').forEach((input) => {
+    syncRangeVars(input);
+    input.addEventListener("input", () => syncRangeVars(input));
+  });
+}
+
+function supportsTopLayerExit() {
+  return Boolean(
+    window.CSS?.supports?.("overlay", "auto") &&
+      window.CSS?.supports?.("transition-behavior", "allow-discrete")
+  );
+}
+
+function closeTopLayer(dialog) {
+  if (!dialog?.open) return;
+  if (supportsTopLayerExit()) {
+    dialog.close();
+    return;
+  }
+  dialog.setAttribute("data-closing", "true");
+  const done = () => {
+    dialog.removeAttribute("data-closing");
+    if (dialog.open) dialog.close();
+  };
+  const timer = setTimeout(done, 230);
+  dialog.addEventListener(
+    "transitionend",
+    (e) => {
+      if (e.target === dialog) {
+        clearTimeout(timer);
+        done();
+      }
+    },
+    { once: true }
+  );
+}
+
+function setupDialogEnhancements(dialog, openBtn, closeBtn) {
+  if (!dialog) return;
+
+  // Fallback for browsers without native Invoker Commands
+  if (!("commandForElement" in HTMLButtonElement.prototype)) {
+    openBtn?.addEventListener("click", () => {
+      if (!dialog.open) dialog.showModal();
+    });
+    closeBtn?.addEventListener("click", () => closeTopLayer(dialog));
+  } else if (!supportsTopLayerExit()) {
+    closeBtn?.addEventListener("click", (e) => {
+      e.preventDefault();
+      closeTopLayer(dialog);
+    });
+  }
+
+  // Fallback for Escape cancel animation on browsers without overlay transition
+  dialog.addEventListener("cancel", (e) => {
+    if (!supportsTopLayerExit()) {
+      e.preventDefault();
+      closeTopLayer(dialog);
+    }
+  });
+
+  // Fallback for browsers without native closedby="any"
+  if (!("closedBy" in HTMLDialogElement.prototype)) {
+    let startedOutside = false;
+    const isOutside = (e) => {
+      const r = dialog.getBoundingClientRect();
+      return (
+        e.clientX < r.left ||
+        e.clientX > r.right ||
+        e.clientY < r.top ||
+        e.clientY > r.bottom
+      );
     };
-    reader.readAsDataURL(file);
-  }
-
-  function updateZoomUI() {
-    if (!zoomRange || !zoomVal || !viewer) return;
-    const scalePercent = Math.round(viewer.scale * 100);
-    zoomRange.value = scalePercent;
-    zoomVal.textContent = `${scalePercent}%`;
-  }
-
-  function updateScaleAUI() {
-    if (!scaleARange || !scaleAInput || !viewer) return;
-    const ratio = viewer.scaleRatioA || 1.0;
-    scaleARange.value = Math.round(ratio * 100);
-    scaleAInput.value = ratio.toFixed(2);
-  }
-
-  function updateScaleBUI() {
-    if (!scaleBRange || !scaleBInput || !viewer) return;
-    const ratio = viewer.scaleRatioB || 1.0;
-    scaleBRange.value = Math.round(ratio * 100);
-    scaleBInput.value = ratio.toFixed(2);
-  }
-
-  function toggleLeftPanel(collapse) {
-    if (collapse) {
-      panelLeft?.classList.add("collapsed");
-      btnRestoreLeft?.classList.remove("hidden");
-    } else {
-      panelLeft?.classList.remove("collapsed");
-      btnRestoreLeft?.classList.add("hidden");
-    }
-    triggerCanvasResize();
-  }
-
-  function toggleRightPanel(collapse) {
-    if (collapse) {
-      panelRight?.classList.add("collapsed");
-      btnRestoreRight?.classList.remove("hidden");
-    } else {
-      panelRight?.classList.remove("collapsed");
-      btnRestoreRight?.classList.add("hidden");
-    }
-    triggerCanvasResize();
-  }
-
-  function toggleBottomPanel(collapse) {
-    if (collapse) {
-      panelBottom?.classList.add("collapsed");
-      btnRestoreBottom?.classList.remove("hidden");
-    } else {
-      panelBottom?.classList.remove("collapsed");
-      btnRestoreBottom?.classList.add("hidden");
-    }
-    triggerCanvasResize();
-  }
-
-  function toggleQuickBar(collapse) {
-    if (collapse) {
-      quickBar?.classList.add("collapsed");
-      btnRestoreQuick?.classList.remove("hidden");
-    } else {
-      quickBar?.classList.remove("collapsed");
-      btnRestoreQuick?.classList.add("hidden");
-    }
-  }
-
-  function triggerCanvasResize() {
-    setTimeout(() => {
-      if (workspace && imgAObj && viewer) {
-        const rect = workspace.getBoundingClientRect();
-        viewer.onStateChange();
-      }
-    }, 230);
-  }
-
-  function setOpacityValue(rawVal) {
-    if (!opacityRange || !opacityVal || !modesCtrl) return;
-    const clamped = Math.max(0, Math.min(500, rawVal));
-    opacityRange.value = clamped;
-    const percent = (clamped / 5).toFixed(1);
-    opacityVal.textContent = `${percent}%`;
-    modesCtrl.setOpacity(clamped / 500);
-  }
-
-  function stopAutoBlink() {
-    if (isAutoBlinking) {
-      clearInterval(autoBlinkInterval);
-      isAutoBlinking = false;
-      btnAutoBlink?.classList.remove("toggle-active");
-      setOpacityValue(250);
-    }
-  }
-
-  function startAutoBlink() {
-    stopAutoBlink();
-    if (isFlashing) {
-      clearInterval(flashInterval);
-      isFlashing = false;
-      btnFadeFlash?.classList.remove("toggle-active");
-    }
-
-    isAutoBlinking = true;
-    btnAutoBlink?.classList.add("toggle-active");
-    let state = false;
-    autoBlinkInterval = setInterval(() => {
-      state = !state;
-      setOpacityValue(state ? 500 : 0);
-    }, blinkSpeedMs);
-  }
-
-  function updateBlinkSpeed(ms) {
-    const clampedMs = Math.max(100, Math.min(5000, ms));
-    blinkSpeedMs = clampedMs;
-    const sec = (clampedMs / 1000).toFixed(1);
-
-    if (blinkSpeedRange) blinkSpeedRange.value = clampedMs;
-    if (blinkSpeedInput) blinkSpeedInput.value = sec;
-
-    if (isAutoBlinking) {
-      startAutoBlink();
-    }
-  }
-
-  function isClickOnPhotoA(clientX, clientY) {
-    if (modesCtrl?.currentMode === "split") {
-      const splitPaneA = document.getElementById("split-pane-a");
-      if (splitPaneA) {
-        const rA = splitPaneA.getBoundingClientRect();
-        return clientX >= rA.left && clientX <= rA.right && clientY >= rA.top && clientY <= rA.bottom;
-      }
-    } else if (modesCtrl?.currentMode === "slider") {
-      const curtainHandle = document.getElementById("curtain-handle");
-      if (curtainHandle) {
-        const rC = curtainHandle.getBoundingClientRect();
-        if (modesCtrl.sliderOrientation === "vertical") {
-          return clientX < rC.left;
-        } else {
-          return clientY < rC.top;
-        }
-      }
-    }
-    return true;
-  }
-
-  function isClickOnPhotoB(clientX, clientY) {
-    if (modesCtrl?.currentMode === "split") {
-      const splitPaneB = document.getElementById("split-pane-b");
-      if (splitPaneB) {
-        const rB = splitPaneB.getBoundingClientRect();
-        return clientX >= rB.left && clientX <= rB.right && clientY >= rB.top && clientY <= rB.bottom;
-      }
-    } else if (modesCtrl?.currentMode === "slider") {
-      const curtainHandle = document.getElementById("curtain-handle");
-      if (curtainHandle) {
-        const rC = curtainHandle.getBoundingClientRect();
-        if (modesCtrl.sliderOrientation === "vertical") {
-          return clientX > rC.right;
-        } else {
-          return clientY > rC.bottom;
-        }
-      }
-    }
-    return true;
-  }
-
-  function updateAlignButtonsUI() {
-    if (!viewer) return;
-    const btnSidebarAlignA = document.getElementById("btn-sidebar-align-a");
-    const btnSidebarAlignB = document.getElementById("btn-sidebar-align-b");
-
-    if (viewer.alignTarget === 'B') {
-      btnAlignB?.classList.add("active");
-      btnSidebarAlignB?.classList.add("active");
-      btnSidebarAlignB?.classList.add("primary-tool");
-      btnAlignA?.classList.remove("active");
-      btnSidebarAlignA?.classList.remove("active");
-      btnSidebarAlignA?.classList.remove("primary-tool");
-    } else if (viewer.alignTarget === 'A') {
-      btnAlignA?.classList.add("active");
-      btnSidebarAlignA?.classList.add("active");
-      btnSidebarAlignA?.classList.add("primary-tool");
-      btnAlignB?.classList.remove("active");
-      btnSidebarAlignB?.classList.remove("active");
-      btnSidebarAlignB?.classList.remove("primary-tool");
-    } else {
-      btnAlignA?.classList.remove("active");
-      btnSidebarAlignA?.classList.remove("active");
-      btnSidebarAlignA?.classList.remove("primary-tool");
-      btnAlignB?.classList.remove("active");
-      btnSidebarAlignB?.classList.remove("active");
-      btnSidebarAlignB?.classList.remove("primary-tool");
-    }
-  }
-
-  function addPointPin(clientX, clientY, label) {
-    if (!workspace) return;
-    const pin = document.createElement("div");
-    pin.className = "point-pin-badge";
-    pin.textContent = label;
-    pin.style.left = `${clientX - workspace.getBoundingClientRect().left}px`;
-    pin.style.top = `${clientY - workspace.getBoundingClientRect().top}px`;
-    workspace.appendChild(pin);
-  }
-
-  function clearPointPins() {
-    workspace?.querySelectorAll(".point-pin-badge").forEach(p => p.remove());
-  }
-
-  function setActiveAlignTool(btnElement) {
-    [btnAutoOpenCV, btnAutoEdge, btn1PointAlign, btn2PointAlign, btn3PointAlign, btn4PointAlign, btnWarpAlign].forEach(b => {
-      b?.classList.remove("primary-tool");
+    dialog.addEventListener("pointerdown", (e) => {
+      startedOutside = e.target === dialog && isOutside(e);
     });
-    if (btnElement) {
-      btnElement.classList.add("primary-tool");
-      currentActiveAlignBtn = btnElement;
-    }
-  }
-
-  function cancelPointMode() {
-    activePointsMode = 0;
-    pointsA = [];
-    pointsB = [];
-    setActiveAlignTool(currentActiveAlignBtn || btnAutoEdge);
-    pointAlignBanner?.classList.add("hidden");
-    clearPointPins();
-  }
-
-  function startPointMode(count, btnElement) {
-    cancelPointMode();
-    activePointsMode = count;
-    pointsA = [];
-    pointsB = [];
-    if (btnElement) setActiveAlignTool(btnElement);
-    pointAlignBanner?.classList.remove("hidden");
-    updateInstructionText();
-  }
-
-  function togglePointMode(pointsCount, btnElement) {
-    if (activePointsMode === pointsCount) {
-      cancelPointMode();
-    } else {
-      startPointMode(pointsCount, btnElement);
-    }
-  }
-
-  function updateInstructionText() {
-    if (activePointsMode === 0 || !pointAlignInstruction) return;
-    if (pointsA.length < activePointsMode) {
-      const step = pointsA.length + 1;
-      pointAlignInstruction.textContent = activePointsMode === 1 
-        ? i18n.t("alignPoint1A") 
-        : i18n.t(`alignPointA${step}`);
-    } else if (pointsB.length < activePointsMode) {
-      const step = pointsB.length + 1;
-      pointAlignInstruction.textContent = activePointsMode === 1 
-        ? i18n.t("alignPoint1B") 
-        : i18n.t(`alignPointB${step}`);
-    }
-  }
-
-  function updateFilenameBadges() {
-    const badgeA = document.getElementById("filename-badge-a");
-    const badgeB = document.getElementById("filename-badge-b");
-    const btnSidebarFilenames = document.getElementById("btn-sidebar-filenames");
-    
-    if (btnSidebarFilenames) {
-      btnSidebarFilenames.classList.toggle("active", showFilenames);
-      btnSidebarFilenames.classList.toggle("primary-tool", showFilenames);
-    }
-    if (btnToggleFilenames) {
-      btnToggleFilenames.classList.toggle("active", showFilenames);
-    }
-
-    if (!badgeA || !badgeB) return;
-    const badgeNameA = document.getElementById("badge-name-a");
-    const badgeNameB = document.getElementById("badge-name-b");
-    
-    if (badgeNameA) badgeNameA.textContent = `${filenameA} • ${imgAObj ? `${imgAObj.naturalWidth}×${imgAObj.naturalHeight}` : ''}`;
-    if (badgeNameB) badgeNameB.textContent = `${filenameB} • ${imgBObj ? `${imgBObj.naturalWidth}×${imgBObj.naturalHeight}` : ''}`;
-
-    if (showFilenames && imageASrc && imageBSrc) {
-      badgeA.classList.remove("hidden");
-      badgeB.classList.remove("hidden");
-    } else {
-      badgeA.classList.add("hidden");
-      badgeB.classList.add("hidden");
-    }
-  }
-
-  function updateStatusHint(message, isLoading = false) {
-    const existing = document.getElementById("status-toast");
-    if (existing) existing.remove();
-    if (statusToastTimer) clearTimeout(statusToastTimer);
-
-    const toast = document.createElement("div");
-    toast.id = "status-toast";
-    toast.style.cssText = `
-      position: fixed;
-      top: 56px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(17, 24, 39, 0.92);
-      backdrop-filter: blur(10px);
-      color: #f8fafc;
-      padding: 4px 14px;
-      height: 28px;
-      border-radius: 14px;
-      font-size: 0.76rem;
-      font-weight: 500;
-      border: 1px solid rgba(99, 102, 241, 0.5);
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
-      z-index: 9999;
-      white-space: nowrap;
-      pointer-events: none;
-      transition: opacity 0.3s ease;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    `;
-
-    if (isLoading) {
-      const spinner = document.createElement("span");
-      spinner.style.cssText = `
-        display: inline-block;
-        width: 10px;
-        height: 10px;
-        border: 2px solid rgba(99,102,241,0.3);
-        border-top-color: #6366f1;
-        border-radius: 50%;
-        animation: spin 0.7s linear infinite;
-      `;
-      if (!document.getElementById("spin-keyframes")) {
-        const style = document.createElement("style");
-        style.id = "spin-keyframes";
-        style.textContent = "@keyframes spin { to { transform: rotate(360deg); } }";
-        document.head.appendChild(style);
+    dialog.addEventListener("pointerup", (e) => {
+      if (startedOutside && e.target === dialog && isOutside(e)) {
+        closeTopLayer(dialog);
       }
-      toast.appendChild(spinner);
-    }
-
-    const text = document.createTextNode(message);
-    toast.appendChild(text);
-    document.body.appendChild(toast);
-
-    if (!isLoading) {
-      statusToastTimer = setTimeout(() => {
-        toast.style.opacity = "0";
-        setTimeout(() => toast.remove(), 300);
-      }, 6000);
-    }
+      startedOutside = false;
+    });
   }
+}
 
-  function handleSwap() {
-    if (!viewer || !modesCtrl) return;
-    viewer.swapImages();
-    const tempSrc = imageASrc;
-    imageASrc = imageBSrc;
-    imageBSrc = tempSrc;
+function setupPopoverFallback(popoverEl, anchorEl, preferredSide = "bottom-end") {
+  if (!popoverEl || !anchorEl) return;
+  if (window.CSS?.supports?.("position-area", "block-end")) return;
 
-    const tempImg = imgAObj;
-    imgAObj = imgBObj;
-    imgBObj = tempImg;
+  popoverEl.addEventListener("beforetoggle", (e) => {
+    if (e.newState !== "open") return;
+    requestAnimationFrame(() => {
+      const ar = anchorEl.getBoundingClientRect();
+      const pr = popoverEl.getBoundingClientRect();
+      const gap = 6;
+      let top =
+        preferredSide.startsWith("top")
+          ? ar.top - pr.height - gap
+          : ar.bottom + gap;
+      let left =
+        preferredSide.endsWith("start")
+          ? ar.left
+          : ar.right - pr.width;
 
-    const tempFile = fileObjA;
-    fileObjA = fileObjB;
-    fileObjB = tempFile;
-
-    const tempName = filenameA;
-    filenameA = filenameB;
-    filenameB = tempName;
-
-    modesCtrl.updateImages(imageASrc, imageBSrc);
-    updateRightSidebarInfo();
-    updateFilenameBadges();
-  }
-
-  function checkBothImagesLoaded() {
-    if (!modesCtrl || !viewer || !workspace) return;
-    if (imageASrc && imageBSrc) {
-      modesCtrl.updateImages(imageASrc, imageBSrc);
-      viewer.setImages(imgAObj, imgBObj);
-      const rect = workspace.getBoundingClientRect();
-      viewer.centerBoth(rect.width, rect.height);
-      updateFilenameBadges();
-      setActiveAlignTool(currentActiveAlignBtn || btnAutoEdge);
-      updateStatusHint(i18n.t("imagesLoaded"), false);
-    } else if (imageASrc) {
-      modesCtrl.updateImages(imageASrc, null);
-      viewer.setImages(imgAObj, null);
-      const rect = workspace.getBoundingClientRect();
-      viewer.centerBoth(rect.width, rect.height);
-      updateFilenameBadges();
-    } else if (imageBSrc) {
-      modesCtrl.updateImages(null, imageBSrc);
-      viewer.setImages(null, imgBObj);
-      const rect = workspace.getBoundingClientRect();
-      viewer.centerBoth(rect.width, rect.height);
-      updateFilenameBadges();
-    }
-  }
-
-  function updateRightSidebarInfo() {
-    const thumbA = document.getElementById("thumb-a");
-    const infoNameA = document.getElementById("info-name-a");
-    const infoPathA = document.getElementById("info-path-a");
-    const infoResA = document.getElementById("info-res-a");
-    const infoFmtA = document.getElementById("info-fmt-a");
-    const infoSizeA = document.getElementById("info-size-a");
-    const infoDateA = document.getElementById("info-date-a");
-
-    if (imageASrc && thumbA) thumbA.src = imageASrc;
-    if (infoNameA) infoNameA.textContent = filenameA || "Изображение A";
-    if (infoPathA) infoPathA.textContent = fileObjA ? (fileObjA.path && fileObjA.path !== fileObjA.name ? fileObjA.path : "Источник: Файл") : "Источник: Буфер обмена";
-    if (infoResA && imgAObj) infoResA.textContent = `${imgAObj.naturalWidth} × ${imgAObj.naturalHeight}`;
-    if (infoFmtA && fileObjA) infoFmtA.textContent = fileObjA.type ? fileObjA.type.split("/")[1]?.toUpperCase() : "PNG";
-    if (infoSizeA && fileObjA) infoSizeA.textContent = `${(fileObjA.size / (1024 * 1024)).toFixed(2)} МБ`;
-    if (infoDateA && fileObjA) infoDateA.textContent = new Date(fileObjA.lastModified || Date.now()).toLocaleDateString("ru-RU");
-
-    const thumbB = document.getElementById("thumb-b");
-    const infoNameB = document.getElementById("info-name-b");
-    const infoPathB = document.getElementById("info-path-b");
-    const infoResB = document.getElementById("info-res-b");
-    const infoFmtB = document.getElementById("info-fmt-b");
-    const infoSizeB = document.getElementById("info-size-b");
-    const infoDateB = document.getElementById("info-date-b");
-
-    if (imageBSrc && thumbB) thumbB.src = imageBSrc;
-    if (infoNameB) infoNameB.textContent = filenameB || "Изображение B";
-    if (infoPathB) infoPathB.textContent = fileObjB ? (fileObjB.path && fileObjB.path !== fileObjB.name ? fileObjB.path : "Источник: Файл") : "Источник: Буфер обмена";
-    if (infoResB && imgBObj) infoResB.textContent = `${imgBObj.naturalWidth} × ${imgBObj.naturalHeight}`;
-    if (infoFmtB && fileObjB) infoFmtB.textContent = fileObjB.type ? fileObjB.type.split("/")[1]?.toUpperCase() : "PNG";
-    if (infoSizeB && fileObjB) infoSizeB.textContent = `${(fileObjB.size / (1024 * 1024)).toFixed(2)} МБ`;
-    if (infoDateB && fileObjB) infoDateB.textContent = new Date(fileObjB.lastModified || Date.now()).toLocaleDateString("ru-RU");
-  }
-
-  function setupDropzone(boxId, inputId, previewId, callback) {
-    const box = document.getElementById(boxId);
-    const input = document.getElementById(inputId);
-    const preview = document.getElementById(previewId);
-
-    box?.addEventListener("click", (e) => {
-      if (e.target !== input) {
-        input?.click();
+      if (top < 8) top = ar.bottom + gap;
+      if (top + pr.height > window.innerHeight - 8) {
+        top = Math.max(8, ar.top - pr.height - gap);
       }
+      left = Math.max(8, Math.min(window.innerWidth - pr.width - 8, left));
+
+      popoverEl.style.position = "fixed";
+      popoverEl.style.inset = "auto";
+      popoverEl.style.margin = "0";
+      popoverEl.style.top = `${Math.round(top)}px`;
+      popoverEl.style.left = `${Math.round(left)}px`;
     });
+  });
+}
 
-    input?.addEventListener("change", (e) => {
-      const file = e.target.files[0];
-      if (file) handleFile(file);
-      e.target.value = "";
-    });
+/* ============================================================================
+   Core Initialization
+   ============================================================================ */
+document.addEventListener("DOMContentLoaded", () => {
+  cacheDOM();
+  settings.applyToDOM();
+  i18n.updateUI();
+  initAllRanges();
 
-    box?.addEventListener("dragover", (e) => {
-      e.preventDefault();
-      box.classList.add("drag-over");
-    });
-
-    box?.addEventListener("dragleave", () => {
-      box.classList.remove("drag-over");
-    });
-
-    box?.addEventListener("drop", (e) => {
-      e.preventDefault();
-      box.classList.remove("drag-over");
-      const file = e.dataTransfer.files[0];
-      if (file) handleFile(file);
-    });
-
-    function handleFile(file) {
-      if (!isImageFile(file)) {
-        updateStatusHint(i18n.t("invalidFile"), false);
-        return;
-      }
-      loadSingleFile(file, (src, img) => {
-        if (preview) {
-          preview.src = src;
-          preview.classList.remove("hidden");
-        }
-        callback(src, img, file);
-      });
-    }
-  }
-
-  // --- 3. Instantiation & Event Wiring ---
   viewer = new SynchronizedViewer({
-    onStateChange: () => {
-      modesCtrl?.render();
-      updateZoomUI();
-      updateScaleAUI();
-      updateScaleBUI();
-    }
+    onStateChange: handleViewerStateChange,
   });
 
-  modesCtrl = new ModesController(viewer, container);
+  modesCtrl = new ModesController(viewer, dom.viewerContainer);
+  modesCtrl.diffStyle = settings.get("defaultDiffMode");
+  modesCtrl.diffGain = settings.get("diffGain");
+  modesCtrl.setImageRenderingPref(settings.get("imageRendering"));
+  modesCtrl.onCurtainChange = () => {};
 
-  const resizeObserver = new ResizeObserver(() => {
-    if (workspace && imgAObj && viewer) {
-      viewer.onStateChange();
-    }
-  });
-  if (workspace) resizeObserver.observe(workspace);
+  bindHeaderAndModes();
+  bindZoomControls();
+  bindLeftDock();
+  bindWorkspaceInteractions();
+  bindRightInspector();
+  bindBottomDock();
+  bindSettingsDialog();
+  bindHelpDialog();
+  bindPopovers();
+  bindKeyboardShortcuts();
 
-  // Set default active tool highlight
-  setActiveAlignTool(btnAutoEdge);
-
-  // Panel Collapsing Listeners
-  btnCollapseLeft?.addEventListener("click", () => toggleLeftPanel(true));
-  btnCloseLeftInner?.addEventListener("click", () => toggleLeftPanel(true));
-  btnRestoreLeft?.addEventListener("click", () => toggleLeftPanel(false));
-
-  btnCollapseRight?.addEventListener("click", () => toggleRightPanel(true));
-  btnCloseRightInner?.addEventListener("click", () => toggleRightPanel(true));
-  btnRestoreRight?.addEventListener("click", () => toggleRightPanel(false));
-
-  btnCollapseBottom?.addEventListener("click", () => toggleBottomPanel(true));
-  btnRestoreBottom?.addEventListener("click", () => toggleBottomPanel(false));
-
-  btnCollapseQuick?.addEventListener("click", () => toggleQuickBar(true));
-  btnRestoreQuick?.addEventListener("click", () => toggleQuickBar(false));
-
-  // Accordions
-  document.querySelectorAll(".accordion-trigger").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const targetId = btn.dataset.target;
-      const content = document.getElementById(targetId);
-      if (!content) return;
-      const isOpen = !content.classList.contains("hidden");
-      if (isOpen) {
-        content.classList.add("hidden");
-        btn.classList.remove("open");
-      } else {
-        content.classList.remove("hidden");
-        btn.classList.add("open");
-        setTimeout(() => {
-          btn.scrollIntoView({ behavior: "smooth", block: "nearest" });
-        }, 80);
-      }
-    });
+  document.addEventListener("languageChanged", () => {
+    syncDynamicTextsOnLanguageChange();
   });
 
-  // Language Dropdown
-  langDropdownBtn?.addEventListener("click", (e) => {
-    e.stopPropagation();
-    langDropdownMenu?.classList.toggle("hidden");
+  syncSettingsUI();
+  syncPanelCollapsedState();
+  applyModeSelection("slider");
+  setLayerTarget("none");
+  updateOpacityUI(modesCtrl.opacity);
+  updateDiffUI();
+  updateSyncToggleUI();
+  updateFilenamesToggleUI();
+  updateProbeVisibility();
+  updateOffsetReadout();
+  updateScaleUI();
+});
+
+function handleViewerStateChange() {
+  modesCtrl.render();
+  updateZoomDisplay();
+  updateOffsetReadout();
+  updatePointPins();
+}
+
+/* ============================================================================
+   Header & Modes
+   ============================================================================ */
+function bindHeaderAndModes() {
+  dom.modeSelector?.querySelectorAll(".seg-btn[data-mode]").forEach((btn) => {
+    btn.addEventListener("click", () => applyModeSelection(btn.dataset.mode));
   });
 
-  window.addEventListener("click", () => {
-    toolsDropdownMenu?.classList.add("hidden");
-    langDropdownMenu?.classList.add("hidden");
+  dom.btnSliderVertical?.addEventListener("click", () => {
+    setCurtainOrientation("vertical");
   });
 
-  // Zoom Controls
-  zoomRange?.addEventListener("input", (e) => {
-    const val = parseFloat(e.target.value) / 100;
-    const rect = workspace.getBoundingClientRect();
-    viewer.setZoom(val, rect.left + rect.width / 2, rect.top + rect.height / 2, rect);
+  dom.btnSliderHorizontal?.addEventListener("click", () => {
+    setCurtainOrientation("horizontal");
   });
 
-  document.getElementById("btn-zoom-in")?.addEventListener("click", () => {
-    const rect = workspace.getBoundingClientRect();
-    viewer.setZoom(viewer.scale * 1.2, rect.left + rect.width / 2, rect.top + rect.height / 2, rect);
+  const toggleLeft = () => toggleDock("left");
+  const toggleRight = () => toggleDock("right");
+  const toggleBottom = () => toggleDock("bottom");
+
+  dom.btnCollapseLeft?.addEventListener("click", toggleLeft);
+  dom.btnCloseLeftInner?.addEventListener("click", toggleLeft);
+  dom.btnRestoreLeft?.addEventListener("click", toggleLeft);
+
+  dom.btnCollapseRight?.addEventListener("click", toggleRight);
+  dom.btnCloseRightInner?.addEventListener("click", toggleRight);
+  dom.btnRestoreRight?.addEventListener("click", toggleRight);
+
+  dom.btnCollapseBottom?.addEventListener("click", toggleBottom);
+  dom.btnRestoreBottom?.addEventListener("click", toggleBottom);
+  dom.btnQuickUpload?.addEventListener("click", toggleBottom);
+}
+
+function toggleDock(which) {
+  if (which === "left" && dom.panelLeft) {
+    const collapsed = dom.panelLeft.classList.toggle("collapsed");
+    dom.btnRestoreLeft?.classList.toggle("hidden", !collapsed);
+    dom.btnCollapseLeft?.setAttribute("aria-expanded", String(!collapsed));
+  } else if (which === "right" && dom.panelRight) {
+    const collapsed = dom.panelRight.classList.toggle("collapsed");
+    dom.btnRestoreRight?.classList.toggle("hidden", !collapsed);
+    dom.btnCollapseRight?.setAttribute("aria-expanded", String(!collapsed));
+  } else if (which === "bottom" && dom.panelBottom) {
+    const collapsed = dom.panelBottom.classList.toggle("collapsed");
+    dom.btnRestoreBottom?.classList.toggle("hidden", !collapsed);
+    dom.btnCollapseBottom?.setAttribute("aria-expanded", String(!collapsed));
+    dom.btnQuickUpload?.classList.toggle("active", !collapsed);
+    dom.btnQuickUpload?.setAttribute("aria-pressed", String(!collapsed));
+  }
+}
+
+function syncPanelCollapsedState() {
+  dom.btnQuickUpload?.classList.toggle("active", !dom.panelBottom?.classList.contains("collapsed"));
+  dom.btnQuickUpload?.setAttribute(
+    "aria-pressed",
+    String(!dom.panelBottom?.classList.contains("collapsed"))
+  );
+}
+
+function applyModeSelection(mode) {
+  modesCtrl.setMode(mode);
+
+  dom.modeSelector?.querySelectorAll(".seg-btn[data-mode]").forEach((btn) => {
+    const isActive = btn.dataset.mode === mode;
+    btn.classList.toggle("active", isActive);
+    btn.setAttribute("aria-pressed", String(isActive));
   });
 
-  document.getElementById("btn-zoom-out")?.addEventListener("click", () => {
-    const rect = workspace.getBoundingClientRect();
-    viewer.setZoom(viewer.scale / 1.2, rect.left + rect.width / 2, rect.top + rect.height / 2, rect);
-  });
-
-  document.getElementById("btn-zoom-100")?.addEventListener("click", () => {
-    const rect = workspace.getBoundingClientRect();
-    viewer.setZoom(1.0, rect.left + rect.width / 2, rect.top + rect.height / 2, rect);
-  });
-
-  document.getElementById("btn-zoom-11")?.addEventListener("click", () => {
-    const rect = workspace.getBoundingClientRect();
-    viewer.setZoom(1.0, rect.left + rect.width / 2, rect.top + rect.height / 2, rect);
-  });
-
-  document.getElementById("btn-zoom-fit")?.addEventListener("click", () => {
-    const rect = workspace.getBoundingClientRect();
-    viewer.centerBoth(rect.width, rect.height);
-  });
-
-  // Quick Bar Handlers
-  document.getElementById("btn-quick-show-both")?.addEventListener("click", () => {
-    const rect = workspace.getBoundingClientRect();
-    viewer.centerBoth(rect.width, rect.height);
-  });
-
-  document.getElementById("btn-quick-fit")?.addEventListener("click", () => {
-    const rect = workspace.getBoundingClientRect();
-    viewer.centerBoth(rect.width, rect.height);
-  });
-
-  document.getElementById("btn-quick-actual")?.addEventListener("click", () => {
-    const rect = workspace.getBoundingClientRect();
-    viewer.setZoom(1.0, rect.left + rect.width / 2, rect.top + rect.height / 2, rect);
-  });
-
-  // Size Controls
-  scaleARange?.addEventListener("input", (e) => {
-    const ratio = parseFloat(e.target.value) / 100;
-    viewer.setScaleRatioA(ratio);
-    if (scaleAInput) scaleAInput.value = ratio.toFixed(2);
-  });
-
-  scaleAInput?.addEventListener("change", (e) => {
-    const val = parseFloat(e.target.value);
-    if (!isNaN(val) && val > 0) {
-      viewer.setScaleRatioA(val);
-      if (scaleARange) scaleARange.value = Math.round(val * 100);
-    }
-  });
-
-  const btnMatchSizes = document.getElementById("btn-match-sizes");
-  btnMatchSizes?.addEventListener("click", () => {
-    viewer.matchImageSizes();
-    updateScaleAUI();
-    updateScaleBUI();
-  });
-
-  scaleBRange?.addEventListener("input", (e) => {
-    const ratio = parseFloat(e.target.value) / 100;
-    viewer.setScaleRatioB(ratio);
-    if (scaleBInput) scaleBInput.value = ratio.toFixed(2);
-  });
-
-  scaleBInput?.addEventListener("change", (e) => {
-    const val = parseFloat(e.target.value);
-    if (!isNaN(val) && val > 0) {
-      viewer.setScaleRatioB(val);
-      if (scaleBRange) scaleBRange.value = Math.round(val * 100);
-    }
-  });
-
-  // Workspace Pan & Zoom
-  workspace?.addEventListener("mousedown", (e) => {
-    mouseDownPos = { x: e.clientX, y: e.clientY };
-    if (e.target.closest("#curtain-handle") || e.target.closest(".point-pin-badge") || e.target.closest(".floating-quick-bar")) return;
-    if (e.button === 0 || e.button === 1) {
-      isPanning = true;
-      lastMouse = { x: e.clientX, y: e.clientY };
-      workspace.classList.add("panning");
-    }
-  });
-
-  window.addEventListener("mousemove", (e) => {
-    if (!isPanning || !viewer) return;
-    const dx = e.clientX - lastMouse.x;
-    const dy = e.clientY - lastMouse.y;
-    lastMouse = { x: e.clientX, y: e.clientY };
-    viewer.panBy(dx, dy);
-  });
-
-  window.addEventListener("mouseup", () => {
-    if (isPanning && workspace) {
-      isPanning = false;
-      workspace.classList.remove("panning");
-    }
-  });
-
-  workspace?.addEventListener("wheel", (e) => {
-    e.preventDefault();
-    if (!viewer) return;
-    const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
-    const newScale = viewer.scale * zoomFactor;
-    const rect = workspace.getBoundingClientRect();
-    viewer.setZoom(newScale, e.clientX, e.clientY, rect);
-  }, { passive: false });
-
-  // Mode Switching
-  const modeSelector = document.getElementById("mode-selector");
-  const groupSliderControls = document.getElementById("group-slider-controls");
-
-  modeSelector?.addEventListener("click", (e) => {
-    const btn = e.target.closest(".btn-seg");
-    if (!btn || !modesCtrl) return;
-    
-    const mode = btn.dataset.mode;
-    modeSelector.querySelectorAll(".btn-seg").forEach(b => b.classList.remove("active"));
-    btn.classList.add("active");
-
-    if (mode === "slider") {
-      stopAutoBlink();
-      groupSliderControls?.classList.remove("hidden");
-    } else {
-      stopAutoBlink();
-      groupSliderControls?.classList.add("hidden");
-    }
-
-    modesCtrl.setMode(mode);
-  });
-
-  opacityRange?.addEventListener("input", (e) => {
-    setOpacityValue(parseInt(e.target.value, 10));
-  });
-
-  document.getElementById("btn-fade-0")?.addEventListener("click", () => setOpacityValue(0));
-  document.getElementById("btn-fade-50")?.addEventListener("click", () => setOpacityValue(250));
-  document.getElementById("btn-fade-100")?.addEventListener("click", () => setOpacityValue(500));
-
-  btnFadeFlash?.addEventListener("click", () => {
-    if (isFlashing) {
-      clearInterval(flashInterval);
-      isFlashing = false;
-      btnFadeFlash.classList.remove("toggle-active");
-      setOpacityValue(250);
-    } else {
-      stopAutoBlink();
-      isFlashing = true;
-      btnFadeFlash.classList.add("toggle-active");
-      let state = false;
-      flashInterval = setInterval(() => {
-        state = !state;
-        setOpacityValue(state ? 500 : 0);
-      }, 150);
-    }
-  });
-
-  blinkSpeedRange?.addEventListener("input", (e) => {
-    updateBlinkSpeed(parseInt(e.target.value, 10));
-  });
-
-  blinkSpeedInput?.addEventListener("change", (e) => {
-    const sec = parseFloat(e.target.value);
-    if (!isNaN(sec) && sec > 0) {
-      updateBlinkSpeed(Math.round(sec * 1000));
-    }
-  });
-
-  btnToggleDiff?.addEventListener("click", () => {
-    isDiffOverlay = !isDiffOverlay;
-    btnToggleDiff.classList.toggle("primary-tool", isDiffOverlay);
-    btnToggleDiff.classList.toggle("active", isDiffOverlay);
-    container?.classList.toggle("diff-mode", isDiffOverlay);
-    updateStatusHint(isDiffOverlay ? "Режим подсветки разницы (Diff) включен" : "Режим подсветки разницы отключен", false);
-  });
-
-  btnAutoBlink?.addEventListener("click", () => {
-    if (isAutoBlinking) {
-      stopAutoBlink();
-    } else {
-      startAutoBlink();
-    }
-  });
-
-  btnSliderVert?.addEventListener("click", () => {
-    btnSliderVert.classList.add("active");
-    btnSliderHoriz?.classList.remove("active");
-    modesCtrl?.setSliderOrientation("vertical");
-  });
-
-  btnSliderHoriz?.addEventListener("click", () => {
-    btnSliderHoriz.classList.add("active");
-    btnSliderVert?.classList.remove("active");
-    modesCtrl?.setSliderOrientation("horizontal");
-  });
-
-  const toggleAlignB = () => {
-    if (!viewer) return;
-    const nextTarget = viewer.alignTarget === 'B' ? 'none' : 'B';
-    viewer.setAlignTarget(nextTarget);
-    updateAlignButtonsUI();
-  };
-
-  const toggleAlignA = () => {
-    if (!viewer) return;
-    const nextTarget = viewer.alignTarget === 'A' ? 'none' : 'A';
-    viewer.setAlignTarget(nextTarget);
-    updateAlignButtonsUI();
-  };
-
-  btnAlignB?.addEventListener("click", toggleAlignB);
-  document.getElementById("btn-sidebar-align-b")?.addEventListener("click", toggleAlignB);
-
-  btnAlignA?.addEventListener("click", toggleAlignA);
-  document.getElementById("btn-sidebar-align-a")?.addEventListener("click", toggleAlignA);
-
-  btn1PointAlign?.addEventListener("click", () => togglePointMode(1, btn1PointAlign));
-  btn2PointAlign?.addEventListener("click", () => togglePointMode(2, btn2PointAlign));
-  btn3PointAlign?.addEventListener("click", () => togglePointMode(3, btn3PointAlign));
-  btn4PointAlign?.addEventListener("click", () => togglePointMode(4, btn4PointAlign));
-  btnWarpAlign?.addEventListener("click", () => togglePointMode(4, btnWarpAlign));
-  btnCancelPoint?.addEventListener("click", cancelPointMode);
-
-  function updateSimilarityScore(percent) {
-    const valEl = document.getElementById("similarity-score-val");
-    if (!valEl) return;
-    if (percent === null || percent === undefined) {
-      valEl.textContent = "—";
-      valEl.style.color = "var(--text-muted)";
-      return;
-    }
-    valEl.textContent = `${percent}%`;
-    if (percent >= 80) {
-      valEl.style.color = "#10b981";
-    } else if (percent >= 50) {
-      valEl.style.color = "#f59e0b";
-    } else {
-      valEl.style.color = "#ef4444";
-    }
+  if (dom.groupSliderControls) {
+    const isSlider = mode === "slider";
+    dom.groupSliderControls.style.opacity = isSlider ? "1" : "0.4";
+    dom.groupSliderControls.style.pointerEvents = isSlider ? "auto" : "none";
   }
 
-  btnAutoEdge?.addEventListener("click", () => {
-    if (!imgAObj || !imgBObj || !viewer) return;
-    setActiveAlignTool(btnAutoEdge);
-    updateStatusHint("Анализ контуров изображений...", true);
-    
-    setTimeout(() => {
-      const result = computeAutoEdgeAlignment(imgAObj, imgBObj);
-      if (result) {
-        viewer.setScaleRatioB(result.scaleRatioB);
-        viewer.offsetX = result.offsetX;
-        viewer.offsetY = result.offsetY;
-        viewer.onStateChange();
-        updateScaleBUI();
-        updateSimilarityScore(result.confidence);
-        updateStatusHint(`Авто-совмещение контуров выполнено! (Сходство: ${result.confidence}%)`, false);
+  if (state.pointModeCount > 0) {
+    updatePointPins();
+  }
+}
+
+function setCurtainOrientation(orientation) {
+  modesCtrl.setSliderOrientation(orientation);
+  const isVert = orientation === "vertical";
+  dom.btnSliderVertical?.classList.toggle("active", isVert);
+  dom.btnSliderVertical?.setAttribute("aria-pressed", String(isVert));
+  dom.btnSliderHorizontal?.classList.toggle("active", !isVert);
+  dom.btnSliderHorizontal?.setAttribute("aria-pressed", String(!isVert));
+}
+
+/* ============================================================================
+   Zoom Controls
+   ============================================================================ */
+function bindZoomControls() {
+  dom.btnZoomIn?.addEventListener("click", () => stepZoom(1.2));
+  dom.btnZoomOut?.addEventListener("click", () => stepZoom(1 / 1.2));
+
+  dom.zoomRange?.addEventListener("input", () => {
+    const pct = Number(dom.zoomRange.value);
+    const rect = dom.viewerContainer.getBoundingClientRect();
+    viewer.setZoom(pct / 100, rect.left + rect.width / 2, rect.top + rect.height / 2, rect, "both");
+  });
+
+  dom.btnZoomFit?.addEventListener("click", fitImagesToViewport);
+  dom.btnZoom11?.addEventListener("click", setActualSizeZoom);
+  dom.btnQuickFit?.addEventListener("click", fitImagesToViewport);
+  dom.btnQuickActual?.addEventListener("click", setActualSizeZoom);
+
+  dom.zoomPopover?.querySelectorAll(".zoom-preset-opt").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const z = btn.dataset.zoom;
+      if (z === "fit") {
+        fitImagesToViewport();
       } else {
-        updateSimilarityScore(null);
-        updateStatusHint("Не удалось выполнить авто-совмещение по контурам", false);
+        const target = Number(z);
+        const rect = dom.viewerContainer.getBoundingClientRect();
+        viewer.setZoom(target, rect.left + rect.width / 2, rect.top + rect.height / 2, rect, "both");
       }
-    }, 50);
+      dom.zoomPopover.hidePopover?.();
+    });
+  });
+}
+
+function stepZoom(multiplier) {
+  const rect = dom.viewerContainer.getBoundingClientRect();
+  viewer.setZoom(
+    viewer.scale * multiplier,
+    rect.left + rect.width / 2,
+    rect.top + rect.height / 2,
+    rect,
+    "both"
+  );
+}
+
+function fitImagesToViewport() {
+  if (!state.imgA && !state.imgB) return;
+  const w = dom.viewerContainer.clientWidth || 800;
+  const h = dom.viewerContainer.clientHeight || 600;
+  viewer.centerBoth(w, h, modesCtrl.currentMode);
+  modesCtrl.render();
+  updateZoomDisplay();
+}
+
+function setActualSizeZoom() {
+  if (!state.imgA && !state.imgB) return;
+  const rect = dom.viewerContainer.getBoundingClientRect();
+  viewer.setZoom(1.0, rect.left + rect.width / 2, rect.top + rect.height / 2, rect, "both");
+}
+
+function updateZoomDisplay() {
+  const pct = Math.round(viewer.scale * 100);
+  if (dom.zoomVal) dom.zoomVal.textContent = `${pct}%`;
+  if (dom.zoomRange) {
+    dom.zoomRange.value = String(Math.max(10, Math.min(1000, pct)));
+    syncRangeVars(dom.zoomRange);
+  }
+}
+
+/* ============================================================================
+   Left Alignment Dock
+   ============================================================================ */
+function bindLeftDock() {
+  dom.btnAutoEdge?.addEventListener("click", runAutoEdgeAlignment);
+  dom.btnAutoOpencv?.addEventListener("click", runOpenCVAlignment);
+  dom.btnMatchSizes?.addEventListener("click", () => {
+    if (!ensureBothImages()) return;
+    viewer.clearTransformMatrix();
+    viewer.matchImageSizes();
+    updateScaleUI();
+    scheduleMetricsRecalc();
+  });
+  dom.btnCenter?.addEventListener("click", () => {
+    if (!state.imgA && !state.imgB) return;
+    viewer.clearTransformMatrix();
+    viewer.offsetX = 0;
+    viewer.offsetY = 0;
+    fitImagesToViewport();
+    scheduleMetricsRecalc();
   });
 
-  btnAutoOpenCV?.addEventListener("click", async () => {
-    if (!imgAObj || !imgBObj || !viewer) return;
-    setActiveAlignTool(btnAutoOpenCV);
-    
-    try {
-      btnAutoOpenCV.disabled = true;
-      updateStatusHint("Загрузка движка OpenCV...", true);
-      await loadOpenCV((msg) => updateStatusHint(msg, true));
-      
-      const matrix = await computeOpenCVAlignment(imgAObj, imgBObj, (msg) => updateStatusHint(msg, true));
-      
-      viewer.clearTransformMatrix();
-      viewer.transformMatrixB = matrix;
-      viewer.onStateChange();
-      updateStatusHint("AI Автовыравнивание (OpenCV) успешно выполнено!", false);
-    } catch (err) {
-      console.error(err);
-      updateStatusHint(`Ошибка AI автовыравнивания: ${err.message || err}`, false);
-    } finally {
-      btnAutoOpenCV.disabled = false;
+  // 3-way manual layer shift
+  dom.btnTargetNone?.addEventListener("click", () => setLayerTarget("none"));
+  dom.btnSidebarAlignA?.addEventListener("click", () => setLayerTarget("A"));
+  dom.btnSidebarAlignB?.addEventListener("click", () => setLayerTarget("B"));
+
+  // D-pad nudging (automatically switches to moving B if currently 'none')
+  const doNudge = (dx, dy, e) => {
+    if (!state.imgA && !state.imgB) return;
+    const base = Number(settings.get("nudgeStep")) || 1;
+    const mult = e?.shiftKey ? 10 : base;
+    if (viewer.alignTarget === "none") {
+      setLayerTarget("B");
     }
+    if (viewer.alignTarget === "A") {
+      viewer.nudgeA(dx * mult, dy * mult);
+    } else {
+      viewer.nudgeB(dx * mult, dy * mult);
+    }
+    scheduleMetricsRecalc();
+  };
+
+  dom.btnNudgeUp?.addEventListener("click", (e) => doNudge(0, -1, e));
+  dom.btnNudgeDown?.addEventListener("click", (e) => doNudge(0, 1, e));
+  dom.btnNudgeLeft?.addEventListener("click", (e) => doNudge(-1, 0, e));
+  dom.btnNudgeRight?.addEventListener("click", (e) => doNudge(1, 0, e));
+
+  // Point registration modes
+  dom.btn1pointAlign?.addEventListener("click", () => togglePointAlignMode(1));
+  dom.btn2pointAlign?.addEventListener("click", () => togglePointAlignMode(2));
+  dom.btn3pointAlign?.addEventListener("click", () => togglePointAlignMode(3));
+  dom.btn4pointAlign?.addEventListener("click", () => togglePointAlignMode(4));
+
+  dom.btnUndoPoint?.addEventListener("click", undoLastPoint);
+  dom.btnCancel2point?.addEventListener("click", cancelPointAlignMode);
+
+  // Scale A & B calibration
+  dom.scaleARange?.addEventListener("input", () => {
+    const ratio = Number(dom.scaleARange.value) / 100;
+    viewer.setScaleRatioA(ratio);
+    if (dom.scaleAInput) dom.scaleAInput.value = ratio.toFixed(2);
+    scheduleMetricsRecalc();
   });
 
-  workspace?.addEventListener("click", (e) => {
-    if (activePointsMode === 0 || !viewer || !workspace) return;
+  dom.scaleAInput?.addEventListener("change", () => {
+    const ratio = Math.max(0.1, Math.min(5, Number(dom.scaleAInput.value) || 1));
+    viewer.setScaleRatioA(ratio);
+    updateScaleUI();
+    scheduleMetricsRecalc();
+  });
 
-    const distDragged = Math.hypot(e.clientX - mouseDownPos.x, e.clientY - mouseDownPos.y);
-    if (distDragged > 6) return;
+  dom.btnResetScaleA?.addEventListener("click", () => {
+    viewer.setScaleRatioA(1.0);
+    updateScaleUI();
+    scheduleMetricsRecalc();
+  });
 
+  dom.scaleBRange?.addEventListener("input", () => {
+    const ratio = Number(dom.scaleBRange.value) / 100;
+    viewer.setScaleRatioB(ratio);
+    if (dom.scaleBInput) dom.scaleBInput.value = ratio.toFixed(2);
+    scheduleMetricsRecalc();
+  });
+
+  dom.scaleBInput?.addEventListener("change", () => {
+    const ratio = Math.max(0.1, Math.min(5, Number(dom.scaleBInput.value) || 1));
+    viewer.setScaleRatioB(ratio);
+    updateScaleUI();
+    scheduleMetricsRecalc();
+  });
+
+  dom.btnResetScaleB?.addEventListener("click", () => {
+    viewer.setScaleRatioB(1.0);
+    updateScaleUI();
+    scheduleMetricsRecalc();
+  });
+
+  dom.btnResetAll?.addEventListener("click", () => {
+    cancelPointAlignMode();
+    setLayerTarget("none");
+    const w = dom.viewerContainer.clientWidth || 800;
+    const h = dom.viewerContainer.clientHeight || 600;
+    viewer.resetAll(w, h, modesCtrl.currentMode);
+    updateScaleUI();
+    scheduleMetricsRecalc();
+    showToast(i18n.t("transformsReset"), { duration: 1800 });
+  });
+}
+
+function setLayerTarget(target) {
+  viewer.setAlignTarget(target);
+  const buttons = [
+    [dom.btnTargetNone, target === "none"],
+    [dom.btnSidebarAlignA, target === "A"],
+    [dom.btnSidebarAlignB, target === "B"],
+  ];
+  for (const [btn, active] of buttons) {
+    if (!btn) continue;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-pressed", String(active));
+  }
+}
+
+function updateOffsetReadout() {
+  if (!dom.offsetValX || !dom.offsetValY) return;
+  let ox = viewer.offsetX;
+  let oy = viewer.offsetY;
+  if (viewer.transformMatrixB?.length === 6) {
+    ox = viewer.transformMatrixB[4];
+    oy = viewer.transformMatrixB[5];
+  } else if (viewer.transformMatrixB?.length === 16) {
+    const w = viewer.transformMatrixB[15] || 1;
+    ox = viewer.transformMatrixB[12] / w;
+    oy = viewer.transformMatrixB[13] / w;
+  }
+  dom.offsetValX.textContent = `${Math.round(ox)} px`;
+  dom.offsetValY.textContent = `${Math.round(oy)} px`;
+}
+
+function updateScaleUI() {
+  const sA = viewer.scaleRatioA || 1;
+  const sB = viewer.scaleRatioB || 1;
+  if (dom.scaleAInput) dom.scaleAInput.value = sA.toFixed(2);
+  if (dom.scaleARange) {
+    dom.scaleARange.value = String(Math.round(Math.max(25, Math.min(300, sA * 100))));
+    syncRangeVars(dom.scaleARange);
+  }
+  if (dom.scaleBInput) dom.scaleBInput.value = sB.toFixed(2);
+  if (dom.scaleBRange) {
+    dom.scaleBRange.value = String(Math.round(Math.max(25, Math.min(300, sB * 100))));
+    syncRangeVars(dom.scaleBRange);
+  }
+}
+
+async function runAutoEdgeAlignment() {
+  if (!ensureBothImages()) return;
+  const toastId = showToast(i18n.t("autoEdgeRunning"), { spinner: true, duration: 0, id: "auto-edge" });
+
+  // Yield briefly so spinner paints before Sobel/ZNCC calculation
+  await new Promise((r) => setTimeout(r, 25));
+
+  viewer.clearTransformMatrix();
+  const res = computeAutoEdgeAlignment(state.imgA, state.imgB);
+  dismissToast(toastId);
+
+  if (res) {
+    viewer.scaleRatioB = res.scaleRatioB;
+    viewer.offsetX = res.offsetX;
+    viewer.offsetY = res.offsetY;
+    viewer.onStateChange();
+    updateScaleUI();
+    scheduleMetricsRecalc();
+    const score = Math.max(0, Math.min(100, Math.round(res.confidence || 0)));
+    showToast(i18n.t("autoEdgeSuccess", { score }), { duration: 3000 });
+  } else {
+    showToast(i18n.t("autoEdgeFail"), { duration: 2800 });
+  }
+}
+
+async function runOpenCVAlignment() {
+  if (!ensureBothImages()) return;
+  const msgs = {
+    loading: i18n.t("opencvLoading"),
+    compiling: i18n.t("opencvCompiling"),
+    preparing: i18n.t("opencvPreparing"),
+    keypoints: i18n.t("opencvKeypoints"),
+    matching: i18n.t("opencvMatching"),
+    ransac: i18n.t("opencvRansac"),
+  };
+
+  const onStatus = (msg) => {
+    showToast(msg, { spinner: true, duration: 0, id: "opencv-status" });
+  };
+
+  try {
+    await loadOpenCV(onStatus, msgs);
+    const matrix = await computeOpenCVAlignment(state.imgA, state.imgB, onStatus, msgs);
+    dismissToast("opencv-status");
+
+    viewer.offsetX = 0;
+    viewer.offsetY = 0;
+    viewer.scaleRatioB = 1.0;
+    viewer.transformMatrixB = matrix;
+    viewer.onStateChange();
+    updateScaleUI();
+    scheduleMetricsRecalc();
+    showToast(i18n.t("opencvSuccess"), { duration: 3000 });
+  } catch (err) {
+    dismissToast("opencv-status");
+    const errText = err?.message || String(err);
+    showToast(i18n.t("opencvError", { err: errText }), { duration: 4000 });
+  }
+}
+
+/* ============================================================================
+   Point Registration Workflow (1 / 2 / 3 / 4 Points)
+   ============================================================================ */
+function togglePointAlignMode(count) {
+  if (!ensureBothImages()) return;
+  if (state.pointModeCount === count) {
+    cancelPointAlignMode();
+    return;
+  }
+  state.pointModeCount = count;
+  state.pointsA = [];
+  state.pointsB = [];
+  setLayerTarget("none");
+  updatePointButtonsUI();
+  updatePointBanner();
+  updatePointPins();
+  dom.workspace?.style.setProperty("cursor", "crosshair");
+}
+
+function cancelPointAlignMode() {
+  state.pointModeCount = 0;
+  state.pointsA = [];
+  state.pointsB = [];
+  updatePointButtonsUI();
+  dom.pointAlignBanner?.classList.add("hidden");
+  clearPointPins();
+  dom.workspace?.style.removeProperty("cursor");
+}
+
+function undoLastPoint() {
+  if (state.pointModeCount === 0) return;
+  if (state.pointsB.length > 0) {
+    state.pointsB.pop();
+  } else if (state.pointsA.length > 0) {
+    state.pointsA.pop();
+  }
+  updatePointBanner();
+  updatePointPins();
+}
+
+function updatePointButtonsUI() {
+  const map = [
+    [dom.btn1pointAlign, 1],
+    [dom.btn2pointAlign, 2],
+    [dom.btn3pointAlign, 3],
+    [dom.btn4pointAlign, 4],
+  ];
+  for (const [btn, n] of map) {
+    if (!btn) continue;
+    btn.setAttribute("aria-pressed", String(state.pointModeCount === n));
+  }
+}
+
+function updatePointBanner() {
+  if (!dom.pointAlignBanner || !dom.pointAlignInstruction) return;
+  const n = state.pointModeCount;
+  if (n === 0) {
+    dom.pointAlignBanner.classList.add("hidden");
+    return;
+  }
+
+  dom.pointAlignBanner.classList.remove("hidden");
+  let key;
+  if (n === 1) {
+    key = state.pointsA.length === 0 ? "alignPoint1A" : "alignPoint1B";
+  } else if (state.pointsA.length < n) {
+    key = `alignPointA${state.pointsA.length + 1}`;
+  } else {
+    key = `alignPointB${state.pointsB.length + 1}`;
+  }
+  dom.pointAlignInstruction.textContent = i18n.t(key);
+}
+
+function handlePointPickClick(e) {
+  const n = state.pointModeCount;
+  if (n === 0) return;
+
+  const isSplit = modesCtrl.currentMode === "split";
+  const pickingB = state.pointsA.length >= n;
+
+  let vpX, vpY;
+  let isSplitPaneB = false;
+
+  if (isSplit) {
+    const targetPaneEl = pickingB
+      ? document.getElementById("split-pane-b")
+      : document.getElementById("split-pane-a");
+    if (!targetPaneEl) return;
+    const rect = targetPaneEl.getBoundingClientRect();
     if (
-      e.target.closest("#curtain-handle") ||
-      e.target.closest(".curtain-thumb") ||
-      e.target.closest(".curtain-line") ||
-      e.target.closest("#point-align-banner") ||
-      e.target.closest(".filename-badge") ||
-      e.target.closest(".floating-quick-bar")
+      e.clientX < rect.left ||
+      e.clientX > rect.right ||
+      e.clientY < rect.top ||
+      e.clientY > rect.bottom
     ) {
       return;
     }
+    vpX = e.clientX - rect.left;
+    vpY = e.clientY - rect.top;
+    isSplitPaneB = pickingB;
+  } else {
+    const rect = dom.viewerContainer.getBoundingClientRect();
+    vpX = e.clientX - rect.left;
+    vpY = e.clientY - rect.top;
+  }
 
-    const rect = workspace.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const clickY = e.clientY - rect.top;
+  if (!pickingB) {
+    state.pointsA.push(viewer.mapViewportToImageA(vpX, vpY));
+  } else {
+    state.pointsB.push(viewer.mapViewportToImageB(vpX, vpY, isSplitPaneB));
+  }
 
-    const expectingA = pointsA.length < activePointsMode;
-    const expectingB = !expectingA && pointsB.length < activePointsMode;
+  updatePointBanner();
+  updatePointPins();
 
-    if (expectingA && !isClickOnPhotoA(e.clientX, e.clientY)) return;
-    if (expectingB && !isClickOnPhotoB(e.clientX, e.clientY)) return;
-
-    if (expectingA) {
-      const trA = viewer.getTransformA();
-      const imgX = (clickX - trA.x) / trA.scale;
-      const imgY = (clickY - trA.y) / trA.scale;
-      pointsA.push({ x: imgX, y: imgY });
-      addPointPin(e.clientX, e.clientY, `A${pointsA.length}`);
-      updateInstructionText();
-    } else if (expectingB) {
-      const trB = viewer.getTransformB();
-      const imgX = (clickX - trB.x) / trB.scale;
-      const imgY = (clickY - trB.y) / trB.scale;
-      pointsB.push({ x: imgX, y: imgY });
-      addPointPin(e.clientX, e.clientY, `B${pointsB.length}`);
-
-      if (pointsB.length === activePointsMode) {
-        viewer.clearTransformMatrix();
-        if (activePointsMode === 1) {
-          viewer.alignByOnePoint(pointsA[0], pointsB[0]);
-        } else if (activePointsMode === 2) {
-          viewer.alignByTwoPoints(pointsA[0], pointsA[1], pointsB[0], pointsB[1]);
-          updateScaleBUI();
-        } else if (activePointsMode === 3) {
-          viewer.alignByThreePoints(pointsA, pointsB);
-        } else if (activePointsMode === 4) {
-          viewer.alignByFourPoints(pointsA, pointsB);
-        }
-        
-        setTimeout(() => {
-          cancelPointMode();
-        }, 300);
-      } else {
-        updateInstructionText();
-      }
+  if (state.pointsA.length === n && state.pointsB.length === n) {
+    if (n === 1) {
+      viewer.alignByOnePoint(state.pointsA[0], state.pointsB[0]);
+    } else if (n === 2) {
+      viewer.alignByTwoPoints(
+        state.pointsA[0],
+        state.pointsA[1],
+        state.pointsB[0],
+        state.pointsB[1]
+      );
+      updateScaleUI();
+    } else if (n === 3) {
+      viewer.alignByThreePoints(state.pointsA, state.pointsB);
+    } else if (n === 4) {
+      viewer.alignByFourPoints(state.pointsA, state.pointsB);
     }
-  });
+    cancelPointAlignMode();
+    scheduleMetricsRecalc();
+  }
+}
 
-  const toggleFilenamesHandler = () => {
-    showFilenames = !showFilenames;
-    updateFilenameBadges();
+function clearPointPins() {
+  dom.workspace?.querySelectorAll(".point-pin-badge").forEach((el) => el.remove());
+}
+
+function updatePointPins() {
+  clearPointPins();
+  if (state.pointModeCount === 0 || !dom.workspace) return;
+
+  const isSplit = modesCtrl.currentMode === "split";
+  const wsRect = dom.workspace.getBoundingClientRect();
+
+  const placePin = (pt, label, targetPaneEl, useTransformB = false, isSplitPaneB = false) => {
+    let localX, localY;
+    if (!useTransformB) {
+      const tr = viewer.getTransformA();
+      localX = tr.x + pt.x * tr.scale;
+      localY = tr.y + pt.y * tr.scale;
+    } else {
+      const tr = isSplitPaneB ? viewer.getSplitTransformB() : viewer.getTransformB();
+      localX = tr.x + pt.x * tr.scale;
+      localY = tr.y + pt.y * tr.scale;
+    }
+
+    const baseRect = targetPaneEl ? targetPaneEl.getBoundingClientRect() : dom.viewerContainer.getBoundingClientRect();
+    const x = baseRect.left - wsRect.left + localX;
+    const y = baseRect.top - wsRect.top + localY;
+
+    const pin = document.createElement("div");
+    pin.className = "point-pin-badge";
+    pin.textContent = label;
+    pin.style.left = `${x}px`;
+    pin.style.top = `${y}px`;
+    dom.workspace.appendChild(pin);
   };
 
-  const btnToggleFilenames = document.getElementById("btn-toggle-filenames");
-  btnToggleFilenames?.addEventListener("click", toggleFilenamesHandler);
-  document.getElementById("btn-sidebar-filenames")?.addEventListener("click", toggleFilenamesHandler);
+  const paneA = isSplit ? document.getElementById("split-pane-a") : null;
+  const paneB = isSplit ? document.getElementById("split-pane-b") : null;
 
-  document.getElementById("btn-reset-all")?.addEventListener("click", () => {
-    if (!viewer || !workspace) return;
-    viewer.clearTransformMatrix();
-    viewer.setScaleRatioA(1.0);
-    viewer.setScaleRatioB(1.0);
-    const rect = workspace.getBoundingClientRect();
-    viewer.centerBoth(rect.width, rect.height);
-    updateScaleAUI();
-    updateScaleBUI();
-  });
+  state.pointsA.forEach((pt, idx) => placePin(pt, `A${idx + 1}`, paneA, false, false));
+  state.pointsB.forEach((pt, idx) => placePin(pt, `B${idx + 1}`, paneB, true, isSplit));
+}
 
-  document.getElementById("btn-center")?.addEventListener("click", () => {
-    if (!viewer || !workspace) return;
-    const rect = workspace.getBoundingClientRect();
-    viewer.centerBoth(rect.width, rect.height);
-  });
+/* ============================================================================
+   Workspace Interactions: Pan, Wheel Zoom, Pixel Probe, D&D, Paste, Demo
+   ============================================================================ */
+function bindWorkspaceInteractions() {
+  const vc = dom.viewerContainer;
 
-  document.getElementById("btn-swap")?.addEventListener("click", handleSwap);
-  document.getElementById("btn-swap-bottom")?.addEventListener("click", handleSwap);
+  // Pointer Pan + Point Click
+  let downX = 0;
+  let downY = 0;
+  let moved = false;
 
-  setupDropzone("dropzone-a", "file-input-a", "preview-a", (src, img, file) => {
-    imageASrc = src;
-    imgAObj = img;
-    fileObjA = file;
-    if (file) filenameA = file.name;
-    checkBothImagesLoaded();
-    updateRightSidebarInfo();
-  });
+  vc?.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 || e.target.closest("#curtain-handle")) return;
+    downX = e.clientX;
+    downY = e.clientY;
+    moved = false;
 
-  setupDropzone("dropzone-b", "file-input-b", "preview-b", (src, img, file) => {
-    imageBSrc = src;
-    imgBObj = img;
-    fileObjB = file;
-    if (file) filenameB = file.name;
-    checkBothImagesLoaded();
-    updateRightSidebarInfo();
-  });
+    if (!state.imgA && !state.imgB) return;
 
-  window.addEventListener("dragover", (e) => {
-    e.preventDefault();
-  });
-
-  window.addEventListener("drop", (e) => {
-    if (e.target.closest("#dropzone-a") || e.target.closest("#dropzone-b")) return;
-    e.preventDefault();
-
-    const files = Array.from(e.dataTransfer.files).filter(isImageFile);
-    if (files.length === 0) return;
-
-    if (files.length >= 2) {
-      loadSingleFile(files[0], (srcA, imgA) => {
-        imageASrc = srcA; imgAObj = imgA; fileObjA = files[0]; filenameA = files[0].name;
-        const previewA = document.getElementById("preview-a");
-        if (previewA) { previewA.src = srcA; previewA.classList.remove("hidden"); }
-
-        loadSingleFile(files[1], (srcB, imgB) => {
-          imageBSrc = srcB; imgBObj = imgB; fileObjB = files[1]; filenameB = files[1].name;
-          const previewB = document.getElementById("preview-b");
-          if (previewB) { previewB.src = srcB; previewB.classList.remove("hidden"); }
-
-          checkBothImagesLoaded();
-          updateRightSidebarInfo();
-        });
-      });
-    } else if (files.length === 1) {
-      const targetSlot = !imageASrc ? 'A' : (!imageBSrc ? 'B' : 'A');
-      loadSingleFile(files[0], (src, img) => {
-        if (targetSlot === 'A') {
-          imageASrc = src; imgAObj = img; fileObjA = files[0]; filenameA = files[0].name;
-          const previewA = document.getElementById("preview-a");
-          if (previewA) { previewA.src = src; previewA.classList.remove("hidden"); }
-        } else {
-          imageBSrc = src; imgBObj = img; fileObjB = files[0]; filenameB = files[0].name;
-          const previewB = document.getElementById("preview-b");
-          if (previewB) { previewB.src = src; previewB.classList.remove("hidden"); }
-        }
-        checkBothImagesLoaded();
-        updateRightSidebarInfo();
-      });
+    state.isPanning = true;
+    state.panLastX = e.clientX;
+    state.panLastY = e.clientY;
+    state.panPane =
+      modesCtrl.currentMode === "split" && e.target.closest("#split-pane-b")
+        ? "B"
+        : "both";
+    dom.workspace?.classList.add("panning");
+    try {
+      vc.setPointerCapture(e.pointerId);
+    } catch {
+      // Ignore synthetic events
     }
   });
 
-  window.addEventListener("paste", (e) => {
-    const items = (e.clipboardData || e.originalEvent?.clipboardData)?.items;
-    if (!items) return;
+  vc?.addEventListener("pointermove", (e) => {
+    if (state.isPanning) {
+      const dx = e.clientX - state.panLastX;
+      const dy = e.clientY - state.panLastY;
+      if (Math.hypot(e.clientX - downX, e.clientY - downY) > 4) {
+        moved = true;
+      }
+      state.panLastX = e.clientX;
+      state.panLastY = e.clientY;
+      viewer.pan(dx, dy, state.panPane);
+    }
 
-    for (const item of items) {
-      if (item.type && item.type.indexOf("image") !== -1) {
-        const file = item.getAsFile();
-        if (!file) continue;
-        const targetSlot = !imageASrc ? 'A' : (!imageBSrc ? 'B' : 'A');
-        loadSingleFile(file, (src, img) => {
-          if (targetSlot === 'A') {
-            imageASrc = src; imgAObj = img; fileObjA = file; filenameA = "Буфер_обмена_A.png";
-            const previewA = document.getElementById("preview-a");
-            if (previewA) { previewA.src = src; previewA.classList.remove("hidden"); }
-          } else {
-            imageBSrc = src; imgBObj = img; fileObjB = file; filenameB = "Буфер_обмена_B.png";
-            const previewB = document.getElementById("preview-b");
-            if (previewB) { previewB.src = src; previewB.classList.remove("hidden"); }
-          }
-          checkBothImagesLoaded();
-          updateRightSidebarInfo();
-          updateStatusHint("Изображение из буфера обмена вставлено", false);
+    if (settings.get("pixelProbe") && state.imgA && state.imgB) {
+      state.lastProbeEvent = e;
+      if (!state.probeRafId) {
+        state.probeRafId = requestAnimationFrame(() => {
+          state.probeRafId = null;
+          if (state.lastProbeEvent) updatePixelProbeAt(state.lastProbeEvent);
         });
-        break;
       }
     }
   });
 
-  const fileInputPair = document.getElementById("file-input-pair");
-  fileInputPair?.addEventListener("change", (e) => {
-    const files = Array.from(e.target.files).filter(isImageFile);
-    if (files.length < 1) return;
-
-    e.target.value = "";
-
-    if (files.length >= 2) {
-      loadSingleFile(files[0], (src, img) => {
-        imageASrc = src;
-        imgAObj = img;
-        fileObjA = files[0];
-        filenameA = files[0].name;
-        const previewA = document.getElementById("preview-a");
-        if (previewA) { previewA.src = src; previewA.classList.remove("hidden"); }
-        updateRightSidebarInfo();
-
-        loadSingleFile(files[1], (srcB, imgB) => {
-          imageBSrc = srcB;
-          imgBObj = imgB;
-          fileObjB = files[1];
-          filenameB = files[1].name;
-          const previewB = document.getElementById("preview-b");
-          if (previewB) { previewB.src = srcB; previewB.classList.remove("hidden"); }
-          checkBothImagesLoaded();
-          updateRightSidebarInfo();
-        });
-      });
-    } else {
-      loadSingleFile(files[0], (src, img) => {
-        imageASrc = src;
-        imgAObj = img;
-        fileObjA = files[0];
-        filenameA = files[0].name;
-        const previewA = document.getElementById("preview-a");
-        if (previewA) { previewA.src = src; previewA.classList.remove("hidden"); }
-        checkBothImagesLoaded();
-        updateRightSidebarInfo();
-      });
+  const endPan = (e) => {
+    if (!state.isPanning) return;
+    state.isPanning = false;
+    dom.workspace?.classList.remove("panning");
+    try {
+      vc.releasePointerCapture(e.pointerId);
+    } catch {
+      // Ignore
     }
+    if (!moved && state.pointModeCount > 0) {
+      handlePointPickClick(e);
+    } else if (moved && viewer.alignTarget !== "none") {
+      scheduleMetricsRecalc();
+    }
+  };
+
+  vc?.addEventListener("pointerup", endPan);
+  vc?.addEventListener("pointercancel", endPan);
+  vc?.addEventListener("pointerleave", () => {
+    if (!state.isPanning) dom.pixelProbeHud?.classList.add("hidden");
   });
 
-  document.querySelectorAll(".lang-btn, .lang-option").forEach((btn) => {
+  // Wheel Zoom toward pointer
+  vc?.addEventListener(
+    "wheel",
+    (e) => {
+      if (!state.imgA && !state.imgB) return;
+      e.preventDefault();
+      const speed = Number(settings.get("wheelZoomSpeed")) || 0.15;
+      const factor = e.deltaY < 0 ? 1 + speed : 1 / (1 + speed);
+
+      if (modesCtrl.currentMode === "split" && !viewer.syncEnabled) {
+        const paneB = e.target.closest("#split-pane-b");
+        if (paneB) {
+          viewer.setZoom(
+            viewer.splitScaleB * factor,
+            e.clientX,
+            e.clientY,
+            paneB.getBoundingClientRect(),
+            "B"
+          );
+          return;
+        }
+        const paneA = e.target.closest("#split-pane-a");
+        if (paneA) {
+          viewer.setZoom(
+            viewer.scale * factor,
+            e.clientX,
+            e.clientY,
+            paneA.getBoundingClientRect(),
+            "both"
+          );
+          return;
+        }
+      }
+
+      const targetRect =
+        modesCtrl.currentMode === "split"
+          ? (e.target.closest(".split-pane") || vc).getBoundingClientRect()
+          : vc.getBoundingClientRect();
+
+      viewer.setZoom(viewer.scale * factor, e.clientX, e.clientY, targetRect, "both");
+    },
+    { passive: false }
+  );
+
+  // Empty state actions
+  dom.emptyPickA?.addEventListener("click", () => dom.fileInputA?.click());
+  dom.emptyPickB?.addEventListener("click", () => dom.fileInputB?.click());
+  dom.btnLoadDemo?.addEventListener("click", loadDemoPair);
+
+  // Global drag and drop onto workspace / window
+  const dropZoneTarget = dom.workspace;
+  if (dropZoneTarget) {
+    ["dragenter", "dragover"].forEach((evt) => {
+      dropZoneTarget.addEventListener(evt, (e) => {
+        e.preventDefault();
+        dropZoneTarget.classList.add("drag-active");
+      });
+    });
+    ["dragleave", "drop"].forEach((evt) => {
+      dropZoneTarget.addEventListener(evt, (e) => {
+        e.preventDefault();
+        dropZoneTarget.classList.remove("drag-active");
+      });
+    });
+    dropZoneTarget.addEventListener("drop", async (e) => {
+      const files = [...(e.dataTransfer?.files || [])].filter(isSupportedImageFile);
+      if (files.length === 0) {
+        if (e.dataTransfer?.files?.length) showToast(i18n.t("invalidFile"));
+        return;
+      }
+      if (files.length >= 2) {
+        await Promise.all([loadImageFile("A", files[0]), loadImageFile("B", files[1])]);
+      } else {
+        const slot = !state.imgA ? "A" : "B";
+        await loadImageFile(slot, files[0]);
+      }
+    });
+  }
+
+  // Clipboard paste (Ctrl+V)
+  window.addEventListener("paste", async (e) => {
+    if (document.querySelector("dialog[open]")) return;
+    const items = [...(e.clipboardData?.items || [])];
+    const imageFiles = items
+      .filter((it) => it.kind === "file" && it.type.startsWith("image/"))
+      .map((it) => it.getAsFile())
+      .filter(Boolean);
+
+    if (imageFiles.length === 0) return;
+    e.preventDefault();
+
+    if (imageFiles.length >= 2) {
+      await Promise.all([
+        loadImageFile("A", imageFiles[0], i18n.t("sourceClipboard")),
+        loadImageFile("B", imageFiles[1], i18n.t("sourceClipboard")),
+      ]);
+    } else {
+      const slot = !state.imgA ? "A" : "B";
+      await loadImageFile(slot, imageFiles[0], i18n.t("sourceClipboard"));
+    }
+    showToast(i18n.t("pasteLoaded"));
+  });
+
+  // Floating Quick Bar controls
+  dom.btnCollapseQuick?.addEventListener("click", () => toggleQuickBar(true));
+  dom.btnRestoreQuick?.addEventListener("click", () => toggleQuickBar(false));
+  dom.btnSwap?.addEventListener("click", swapImagesAndState);
+  dom.btnQuickSyncZoom?.addEventListener("click", () => {
+    viewer.setSyncEnabled(!viewer.syncEnabled);
+    updateSyncToggleUI();
+  });
+  dom.btnSidebarFilenames?.addEventListener("click", () => {
+    state.showFilenames = !state.showFilenames;
+    updateFilenamesToggleUI();
+  });
+  dom.btnToggleProbe?.addEventListener("click", () => {
+    settings.set("pixelProbe", !settings.get("pixelProbe"));
+    updateProbeVisibility();
+    syncSettingsUI();
+  });
+}
+
+function toggleQuickBar(collapse) {
+  state.quickBarCollapsed = collapse;
+  dom.quickActionsBar?.classList.toggle("collapsed", collapse);
+  dom.btnRestoreQuick?.classList.toggle("hidden", !collapse);
+}
+
+function updateSyncToggleUI() {
+  if (!dom.btnQuickSyncZoom) return;
+  dom.btnQuickSyncZoom.classList.toggle("active", viewer.syncEnabled);
+  dom.btnQuickSyncZoom.setAttribute("aria-pressed", String(viewer.syncEnabled));
+}
+
+function updateFilenamesToggleUI() {
+  if (dom.btnSidebarFilenames) {
+    dom.btnSidebarFilenames.classList.toggle("active", state.showFilenames);
+    dom.btnSidebarFilenames.setAttribute("aria-pressed", String(state.showFilenames));
+  }
+  const showA = Boolean(state.showFilenames && state.imgA);
+  const showB = Boolean(state.showFilenames && state.imgB);
+  dom.filenameBadgeA?.classList.toggle("hidden", !showA);
+  dom.filenameBadgeB?.classList.toggle("hidden", !showB);
+}
+
+function updateProbeVisibility() {
+  const enabled = Boolean(settings.get("pixelProbe"));
+  if (dom.btnToggleProbe) {
+    dom.btnToggleProbe.classList.toggle("active", enabled);
+    dom.btnToggleProbe.setAttribute("aria-pressed", String(enabled));
+  }
+  if (!enabled) {
+    dom.pixelProbeHud?.classList.add("hidden");
+  }
+}
+
+function updatePixelProbeAt(e) {
+  if (!dom.pixelProbeHud || !state.imgA || !state.imgB) return;
+
+  const isSplit = modesCtrl.currentMode === "split";
+  let coordA, coordB;
+
+  if (isSplit) {
+    const paneB = document.getElementById("split-pane-b");
+    const paneA = document.getElementById("split-pane-a");
+    if (!paneA || !paneB) return;
+
+    const rB = paneB.getBoundingClientRect();
+    const inPaneB =
+      e.clientX >= rB.left &&
+      e.clientX <= rB.right &&
+      e.clientY >= rB.top &&
+      e.clientY <= rB.bottom;
+
+    if (inPaneB) {
+      coordB = viewer.mapViewportToImageB(e.clientX - rB.left, e.clientY - rB.top, true);
+      coordA = coordB;
+    } else {
+      const rA = paneA.getBoundingClientRect();
+      coordA = viewer.mapViewportToImageA(e.clientX - rA.left, e.clientY - rA.top);
+      coordB = viewer.mapViewportToImageB(e.clientX - rA.left, e.clientY - rA.top, false);
+    }
+  } else {
+    const rect = dom.viewerContainer.getBoundingClientRect();
+    const vpX = e.clientX - rect.left;
+    const vpY = e.clientY - rect.top;
+    coordA = viewer.mapViewportToImageA(vpX, vpY);
+    coordB = viewer.mapViewportToImageB(vpX, vpY, false);
+  }
+
+  const pA = sampleCachedPixel("A", coordA.x, coordA.y);
+  const pB = sampleCachedPixel("B", coordB.x, coordB.y);
+
+  if (!pA && !pB) {
+    dom.pixelProbeHud.classList.add("hidden");
+    return;
+  }
+
+  dom.pixelProbeHud.classList.remove("hidden");
+  const ref = pA || pB;
+  dom.probeCoords.textContent = `X: ${ref.x}  Y: ${ref.y}`;
+
+  if (pA) {
+    dom.probeSwatchA.style.backgroundColor = `rgb(${pA.r}, ${pA.g}, ${pA.b})`;
+    dom.probeRgbA.textContent = `${pA.r}, ${pA.g}, ${pA.b}`;
+  } else {
+    dom.probeSwatchA.style.backgroundColor = "transparent";
+    dom.probeRgbA.textContent = "—";
+  }
+
+  if (pB) {
+    dom.probeSwatchB.style.backgroundColor = `rgb(${pB.r}, ${pB.g}, ${pB.b})`;
+    dom.probeRgbB.textContent = `${pB.r}, ${pB.g}, ${pB.b}`;
+  } else {
+    dom.probeSwatchB.style.backgroundColor = "transparent";
+    dom.probeRgbB.textContent = "—";
+  }
+
+  if (pA && pB) {
+    const d = Math.round((Math.abs(pA.r - pB.r) + Math.abs(pA.g - pB.g) + Math.abs(pA.b - pB.b)) / 3);
+    dom.probeDeltaVal.textContent = String(d);
+  } else {
+    dom.probeDeltaVal.textContent = "—";
+  }
+}
+
+/* ============================================================================
+   Right Studio Inspector: Metrics, Cards, Accordions, Blend, Diff, Metadata
+   ============================================================================ */
+function bindRightInspector() {
+  dom.btnRecalcMetrics?.addEventListener("click", () => {
+    if (!ensureBothImages()) return;
+    updateComparisonMetrics(true);
+  });
+
+  dom.btnReplaceA?.addEventListener("click", () => dom.fileInputA?.click());
+  dom.btnReplaceB?.addEventListener("click", () => dom.fileInputB?.click());
+
+  // Accordion triggers
+  document.querySelectorAll(".accordion-trigger").forEach((btn) => {
     btn.addEventListener("click", () => {
-      const lang = btn.dataset.lang;
-      i18n.setLanguage(lang);
-      langDropdownMenu?.classList.add("hidden");
+      const targetId = btn.dataset.target;
+      const content = targetId ? document.getElementById(targetId) : null;
+      if (!content) return;
+      const isOpen = btn.getAttribute("aria-expanded") === "true";
+      btn.setAttribute("aria-expanded", String(!isOpen));
+      btn.classList.toggle("open", !isOpen);
+      content.classList.toggle("hidden", isOpen);
     });
   });
 
-  const helpModal = document.getElementById("help-modal");
-  document.getElementById("btn-help")?.addEventListener("click", () => {
-    helpModal?.classList.remove("hidden");
+  // Opacity slider + presets
+  dom.opacityRange?.addEventListener("input", () => {
+    const val = Number(dom.opacityRange.value) / 500;
+    modesCtrl.setOpacity(val);
+    updateOpacityUI(val);
+    if (modesCtrl.currentMode !== "fade") applyModeSelection("fade");
   });
-  document.getElementById("btn-close-help")?.addEventListener("click", () => {
-    helpModal?.classList.add("hidden");
+
+  const fadePresets = [
+    [dom.btnFade0, 0],
+    [dom.btnFade25, 0.25],
+    [dom.btnFade50, 0.5],
+    [dom.btnFade75, 0.75],
+    [dom.btnFade100, 1],
+  ];
+  for (const [btn, val] of fadePresets) {
+    btn?.addEventListener("click", () => {
+      modesCtrl.setOpacity(val);
+      updateOpacityUI(val);
+      if (modesCtrl.currentMode !== "fade") applyModeSelection("fade");
+    });
+  }
+
+  // Fast flash & auto-blink
+  dom.btnFadeFlash?.addEventListener("click", () => {
+    if (!state.imgA && !state.imgB) return;
+    if (modesCtrl.currentMode !== "fade") applyModeSelection("fade");
+    const nextOpacity = modesCtrl.opacity > 0.5 ? 0 : 1;
+    modesCtrl.setOpacity(nextOpacity);
+    updateOpacityUI(nextOpacity);
   });
-  helpModal?.addEventListener("click", (e) => {
-    if (e.target === helpModal) helpModal.classList.add("hidden");
+
+  dom.btnAutoBlink?.addEventListener("click", toggleAutoBlink);
+
+  dom.blinkSpeedRange?.addEventListener("input", () => {
+    const ms = Number(dom.blinkSpeedRange.value);
+    setBlinkIntervalMs(ms);
   });
-});
+
+  dom.blinkSpeedInput?.addEventListener("change", () => {
+    const sec = Math.max(0.1, Math.min(5.0, Number(dom.blinkSpeedInput.value) || 1.0));
+    setBlinkIntervalMs(Math.round(sec * 1000));
+  });
+
+  // Diff style, gain & color channel isolation
+  dom.diffStyleSelector?.querySelectorAll(".seg-btn[data-diff-style]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const style = btn.dataset.diffStyle;
+      modesCtrl.setDiffConfig({ style });
+      settings.set("defaultDiffMode", style);
+      updateDiffUI();
+      if (modesCtrl.currentMode !== "diff") applyModeSelection("diff");
+    });
+  });
+
+  dom.diffGainRange?.addEventListener("input", () => {
+    const gain = Number(dom.diffGainRange.value);
+    modesCtrl.setDiffConfig({ gain });
+    settings.set("diffGain", gain);
+    updateDiffUI();
+    if (modesCtrl.currentMode !== "diff") applyModeSelection("diff");
+  });
+
+  dom.channelSelector?.querySelectorAll(".seg-btn[data-channel]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      modesCtrl.setChannelFilter(btn.dataset.channel);
+      updateDiffUI();
+    });
+  });
+}
+
+function updateOpacityUI(opacity) {
+  const pct = (opacity * 100).toFixed(1);
+  if (dom.opacityVal) dom.opacityVal.textContent = `${pct}%`;
+  if (dom.opacityRange) {
+    dom.opacityRange.value = String(Math.round(opacity * 500));
+    syncRangeVars(dom.opacityRange);
+  }
+  const presets = [
+    [dom.btnFade0, 0],
+    [dom.btnFade25, 0.25],
+    [dom.btnFade50, 0.5],
+    [dom.btnFade75, 0.75],
+    [dom.btnFade100, 1],
+  ];
+  for (const [btn, val] of presets) {
+    btn?.classList.toggle("active", Math.abs(opacity - val) < 0.015);
+  }
+}
+
+function toggleAutoBlink() {
+  if (!state.imgA && !state.imgB) return;
+  if (state.isBlinking) {
+    stopAutoBlink();
+    return;
+  }
+  if (modesCtrl.currentMode !== "fade") applyModeSelection("fade");
+  state.isBlinking = true;
+  dom.btnAutoBlink?.classList.add("active");
+  dom.btnAutoBlink?.setAttribute("aria-pressed", "true");
+  runBlinkTimer();
+}
+
+function stopAutoBlink() {
+  state.isBlinking = false;
+  if (state.blinkIntervalId) {
+    clearInterval(state.blinkIntervalId);
+    state.blinkIntervalId = null;
+  }
+  dom.btnAutoBlink?.classList.remove("active");
+  dom.btnAutoBlink?.setAttribute("aria-pressed", "false");
+}
+
+function runBlinkTimer() {
+  if (state.blinkIntervalId) clearInterval(state.blinkIntervalId);
+  state.blinkIntervalId = setInterval(() => {
+    const next = modesCtrl.opacity > 0.5 ? 0 : 1;
+    modesCtrl.setOpacity(next);
+    updateOpacityUI(next);
+  }, state.blinkMs);
+}
+
+function setBlinkIntervalMs(ms) {
+  state.blinkMs = Math.max(100, Math.min(5000, ms));
+  if (dom.blinkSpeedRange) {
+    dom.blinkSpeedRange.value = String(Math.min(3000, state.blinkMs));
+    syncRangeVars(dom.blinkSpeedRange);
+  }
+  if (dom.blinkSpeedInput) {
+    dom.blinkSpeedInput.value = (state.blinkMs / 1000).toFixed(1);
+  }
+  if (state.isBlinking) runBlinkTimer();
+}
+
+function updateDiffUI() {
+  dom.diffStyleSelector?.querySelectorAll(".seg-btn[data-diff-style]").forEach((btn) => {
+    const active = btn.dataset.diffStyle === modesCtrl.diffStyle;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-pressed", String(active));
+  });
+
+  if (dom.diffGainVal) dom.diffGainVal.textContent = `${modesCtrl.diffGain}×`;
+  if (dom.diffGainRange) {
+    dom.diffGainRange.value = String(modesCtrl.diffGain);
+    syncRangeVars(dom.diffGainRange);
+  }
+
+  dom.channelSelector?.querySelectorAll(".seg-btn[data-channel]").forEach((btn) => {
+    const active = btn.dataset.channel === modesCtrl.channelFilter;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-pressed", String(active));
+  });
+}
+
+function scheduleMetricsRecalc() {
+  if (!state.imgA || !state.imgB) return;
+  if (!settings.get("autoComputeMetrics")) return;
+  if (state.metricsTimer) clearTimeout(state.metricsTimer);
+  state.metricsTimer = setTimeout(() => {
+    updateComparisonMetrics(false);
+  }, 90);
+}
+
+function updateComparisonMetrics(showToastOnDone = false) {
+  if (!state.imgA || !state.imgB) return;
+  const metrics = computeComparisonMetrics(state.imgA, state.imgB, viewer);
+  if (!metrics) return;
+
+  if (dom.similarityScoreVal) {
+    dom.similarityScoreVal.textContent = `${metrics.similarity}%`;
+  }
+  if (dom.similarityRingArc) {
+    const dashOffset = SIMILARITY_CIRCUMFERENCE * (1 - metrics.similarity / 100);
+    dom.similarityRingArc.style.strokeDashoffset = dashOffset.toFixed(2);
+    const color =
+      metrics.similarity >= 90
+        ? "var(--success)"
+        : metrics.similarity >= 70
+          ? "var(--accent)"
+          : metrics.similarity >= 45
+            ? "var(--warning)"
+            : "var(--danger)";
+    dom.similarityRingArc.style.stroke = color;
+  }
+
+  if (dom.metricChangedVal) dom.metricChangedVal.textContent = `${metrics.changedPercent}%`;
+  if (dom.metricMaxdeltaVal) dom.metricMaxdeltaVal.textContent = String(metrics.maxDelta);
+  if (dom.metricMaeVal) dom.metricMaeVal.textContent = String(metrics.mae);
+
+  if (showToastOnDone) {
+    showToast(
+      i18n.t("compareSummary", {
+        sim: metrics.similarity,
+        chg: metrics.changedPercent,
+      })
+    );
+  }
+  return metrics;
+}
+
+/* ============================================================================
+   Bottom Upload Dock, Actions & Export
+   ============================================================================ */
+function bindBottomDock() {
+  const bindDropTarget = (el, slot) => {
+    if (!el) return;
+    ["dragenter", "dragover"].forEach((evt) => {
+      el.addEventListener(evt, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        el.classList.add("drag-over");
+      });
+    });
+    ["dragleave", "drop"].forEach((evt) => {
+      el.addEventListener(evt, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        el.classList.remove("drag-over");
+      });
+    });
+    el.addEventListener("drop", async (e) => {
+      const files = [...(e.dataTransfer?.files || [])].filter(isSupportedImageFile);
+      if (files.length === 0) {
+        if (e.dataTransfer?.files?.length) showToast(i18n.t("invalidFile"));
+        return;
+      }
+      if (files.length >= 2) {
+        await Promise.all([loadImageFile("A", files[0]), loadImageFile("B", files[1])]);
+      } else {
+        await loadImageFile(slot, files[0]);
+      }
+    });
+  };
+
+  bindDropTarget(dom.dropzoneA, "A");
+  bindDropTarget(dom.dropzoneB, "B");
+
+  dom.fileInputA?.addEventListener("change", async (e) => {
+    const file = e.target.files?.[0];
+    if (file) await loadImageFile("A", file);
+    e.target.value = "";
+  });
+
+  dom.fileInputB?.addEventListener("change", async (e) => {
+    const file = e.target.files?.[0];
+    if (file) await loadImageFile("B", file);
+    e.target.value = "";
+  });
+
+  dom.fileInputPair?.addEventListener("change", async (e) => {
+    const files = [...(e.target.files || [])].filter(isSupportedImageFile);
+    if (files.length >= 2) {
+      await Promise.all([loadImageFile("A", files[0]), loadImageFile("B", files[1])]);
+    } else if (files.length === 1) {
+      const slot = !state.imgA ? "A" : "B";
+      await loadImageFile(slot, files[0]);
+    } else if (e.target.files?.length) {
+      showToast(i18n.t("invalidFile"));
+    }
+    e.target.value = "";
+  });
+
+  dom.btnSwapBottom?.addEventListener("click", swapImagesAndState);
+
+  dom.btnCompareAction?.addEventListener("click", async () => {
+    if (!ensureBothImages()) return;
+    await runAutoEdgeAlignment();
+    updateComparisonMetrics(true);
+  });
+
+  dom.exportPopover?.querySelectorAll(".popover-export-item[data-export]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      dom.exportPopover.hidePopover?.();
+      if (!ensureBothImages()) return;
+      try {
+        const res = await exportComparison({
+          kind: btn.dataset.export,
+          imgA: state.imgA,
+          imgB: state.imgB,
+          viewer,
+          modesCtrl,
+          filenameA: state.fileA?.name || "A",
+          filenameB: state.fileB?.name || "B",
+          diffGain: modesCtrl.diffGain,
+          diffStyle: modesCtrl.diffStyle,
+        });
+        if (res?.copied) {
+          showToast(i18n.t("exportCopied"));
+        } else if (res?.filename) {
+          showToast(i18n.t("exportSuccess", { file: res.filename }));
+        }
+      } catch (err) {
+        showToast(i18n.t("exportError", { err: err?.message || String(err) }), {
+          duration: 3800,
+        });
+      }
+    });
+  });
+}
+
+/* ============================================================================
+   Image Loading, Swap & Demo Pair
+   ============================================================================ */
+function isSupportedImageFile(file) {
+  if (!file) return false;
+  if (file.type?.startsWith("image/")) return true;
+  return /\.(png|jpe?g|webp|gif|bmp|svg|ico|tiff?|heic|avif)$/i.test(file.name);
+}
+
+function readImageElement(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Failed to decode image"));
+    img.src = url;
+  });
+}
+
+async function loadImageFile(slot, file, sourceHint = "") {
+  if (!isSupportedImageFile(file)) {
+    showToast(i18n.t("invalidFile"));
+    return false;
+  }
+
+  const nextUrl = URL.createObjectURL(file);
+  try {
+    const img = await readImageElement(nextUrl);
+    if (slot === "A") {
+      if (state.urlA) URL.revokeObjectURL(state.urlA);
+      state.imgA = img;
+      state.urlA = nextUrl;
+      state.fileA = file;
+      state.sourceHintA = sourceHint;
+      preparePixelBuffer("A", img);
+      modesCtrl.updateImages(nextUrl, undefined);
+      state.metaA = await parseImageMetadata(file, img);
+    } else {
+      if (state.urlB) URL.revokeObjectURL(state.urlB);
+      state.imgB = img;
+      state.urlB = nextUrl;
+      state.fileB = file;
+      state.sourceHintB = sourceHint;
+      preparePixelBuffer("B", img);
+      modesCtrl.updateImages(undefined, nextUrl);
+      state.metaB = await parseImageMetadata(file, img);
+    }
+
+    onImagesUpdated();
+    return true;
+  } catch {
+    URL.revokeObjectURL(nextUrl);
+    showToast(i18n.t("invalidFile"));
+    return false;
+  }
+}
+
+function onImagesUpdated() {
+  const hasAny = Boolean(state.imgA || state.imgB);
+  dom.emptyStateOverlay?.classList.toggle("hidden", hasAny);
+
+  viewer.setImages(state.imgA, state.imgB);
+  fitImagesToViewport();
+  refreshAllImageUI();
+  updateFilenamesToggleUI();
+
+  if (state.imgA && state.imgB) {
+    const autoMode = settings.get("autoAlignOnLoad");
+    if (autoMode === "match-sizes") {
+      viewer.matchImageSizes();
+    } else if (autoMode === "auto-edge") {
+      const res = computeAutoEdgeAlignment(state.imgA, state.imgB);
+      if (res) {
+        viewer.scaleRatioB = res.scaleRatioB;
+        viewer.offsetX = res.offsetX;
+        viewer.offsetY = res.offsetY;
+        viewer.onStateChange();
+      }
+    }
+    updateScaleUI();
+    scheduleMetricsRecalc();
+  }
+}
+
+function swapImagesAndState() {
+  if (!state.imgA && !state.imgB) return;
+
+  [state.imgA, state.imgB] = [state.imgB, state.imgA];
+  [state.urlA, state.urlB] = [state.urlB, state.urlA];
+  [state.fileA, state.fileB] = [state.fileB, state.fileA];
+  [state.metaA, state.metaB] = [state.metaB, state.metaA];
+  [state.sourceHintA, state.sourceHintB] = [state.sourceHintB, state.sourceHintA];
+
+  preparePixelBuffer("A", state.imgA);
+  preparePixelBuffer("B", state.imgB);
+
+  modesCtrl.updateImages(state.urlA || "", state.urlB || "");
+  viewer.swapImages();
+  updateScaleUI();
+  refreshAllImageUI();
+  updateFilenamesToggleUI();
+  scheduleMetricsRecalc();
+}
+
+function refreshAllImageUI() {
+  updateSlotUI("A", state.fileA, state.urlA, state.metaA, state.sourceHintA);
+  updateSlotUI("B", state.fileB, state.urlB, state.metaB, state.sourceHintB);
+  updateExtendedMetadataTable();
+}
+
+function updateSlotUI(slot, file, url, meta, sourceHint) {
+  const thumb = dom[`thumb${slot}`];
+  const placeholder = dom[`thumbPlaceholder${slot}`];
+  const infoName = dom[`infoName${slot}`];
+  const infoPath = dom[`infoPath${slot}`];
+  const infoRes = dom[`infoRes${slot}`];
+  const infoFmt = dom[`infoFmt${slot}`];
+  const infoSize = dom[`infoSize${slot}`];
+  const infoDate = dom[`infoDate${slot}`];
+  const preview = dom[`preview${slot}`];
+  const dzTitle = dom[`dropzoneTitle${slot}`];
+  const dzHint = dom[`dropzoneHint${slot}`];
+  const badgeName = dom[`badgeName${slot}`];
+
+  if (!meta || !file || !url) {
+    thumb?.classList.add("hidden");
+    placeholder?.classList.remove("hidden");
+    if (infoName) infoName.textContent = i18n.t("notLoadedYet");
+    if (infoPath) infoPath.textContent = "—";
+    if (infoRes) infoRes.textContent = "—";
+    if (infoFmt) infoFmt.textContent = "—";
+    if (infoSize) infoSize.textContent = "—";
+    if (infoDate) infoDate.textContent = "—";
+    preview?.classList.add("hidden");
+    if (dzTitle) dzTitle.textContent = i18n.t(slot === "A" ? "uploadA" : "uploadB");
+    if (dzHint) dzHint.textContent = i18n.t("dragOrClick");
+    if (badgeName) badgeName.textContent = "";
+    return;
+  }
+
+  if (thumb) {
+    thumb.src = url;
+    thumb.classList.remove("hidden");
+  }
+  placeholder?.classList.add("hidden");
+
+  const name = meta.name || file.name;
+  const resText = `${meta.width} × ${meta.height}`;
+  const sizeText = meta.sizeFormatted || formatBytes(file.size);
+  const dateText = file.lastModified
+    ? new Date(file.lastModified).toLocaleDateString(i18n.lang === "en" ? "en-US" : "ru-RU")
+    : "—";
+
+  if (infoName) infoName.textContent = name;
+  if (infoPath) {
+    infoPath.textContent =
+      sourceHint ||
+      file.webkitRelativePath ||
+      i18n.t("sourceFile");
+  }
+  if (infoRes) infoRes.textContent = resText;
+  if (infoFmt) infoFmt.textContent = meta.format || "IMG";
+  if (infoSize) infoSize.textContent = sizeText;
+  if (infoDate) infoDate.textContent = dateText;
+
+  if (preview) {
+    preview.src = url;
+    preview.classList.remove("hidden");
+  }
+  if (dzTitle) dzTitle.textContent = name;
+  if (dzHint) dzHint.textContent = `${resText} • ${sizeText}`;
+  if (badgeName) badgeName.textContent = name;
+}
+
+function updateExtendedMetadataTable() {
+  const fillMeta = (suffix, meta) => {
+    const aspect = dom[`metaAspect${suffix}`];
+    const alpha = dom[`metaAlpha${suffix}`];
+    const depth = dom[`metaDepth${suffix}`];
+    const profile = dom[`metaProfile${suffix}`];
+    const dpi = dom[`metaDpi${suffix}`];
+    const comp = dom[`metaComp${suffix}`];
+    const cam = dom[`metaCam${suffix}`];
+    const exp = dom[`metaExp${suffix}`];
+
+    if (!meta) {
+      for (const el of [aspect, alpha, depth, profile, dpi, comp, cam, exp]) {
+        if (el) el.textContent = "—";
+      }
+      return;
+    }
+
+    if (aspect) aspect.textContent = `${meta.aspect} (${meta.megapixels} MP)`;
+    if (alpha) {
+      alpha.textContent =
+        meta.hasAlpha === null
+          ? "—"
+          : i18n.t(meta.hasAlpha ? "alphaPresent" : "alphaOpaque");
+    }
+    if (depth) depth.textContent = meta.bitDepth || "—";
+    if (profile) profile.textContent = meta.colorProfile || "sRGB";
+    if (dpi) dpi.textContent = meta.dpi || "72 DPI";
+
+    const compKeyMap = {
+      lossless: "compLossless",
+      lossy: "compLossy",
+      vector: "compVector",
+      webp: "compWebp",
+      lzw: "compLzw",
+      standard: "compStandard",
+    };
+    if (comp) {
+      const k = compKeyMap[meta.compression];
+      comp.textContent = k ? i18n.t(k) : meta.compression || "—";
+    }
+
+    if (cam) cam.textContent = meta.camera || i18n.t("noExifData");
+    if (exp) {
+      const parts = [meta.focalLength, meta.aperture, meta.exposure, meta.iso].filter(Boolean);
+      exp.textContent = parts.length ? parts.join(" · ") : "—";
+    }
+  };
+
+  fillMeta("A", state.metaA);
+  fillMeta("B", state.metaB);
+}
+
+function renderProceduralDemoCanvas(variant) {
+  const w = 960;
+  const h = 640;
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+
+  // Sky / studio backdrop gradient
+  const grad = ctx.createLinearGradient(0, 0, w, h);
+  if (variant === "A") {
+    grad.addColorStop(0, "#101b33");
+    grad.addColorStop(0.55, "#1f3a60");
+    grad.addColorStop(1, "#3b2c59");
+  } else {
+    grad.addColorStop(0, "#111c35");
+    grad.addColorStop(0.55, "#234069");
+    grad.addColorStop(1, "#3e2e5c");
+  }
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, w, h);
+
+  ctx.save();
+  // Frame B simulates a tiny camera shift & micro scale so alignment tools shine
+  if (variant === "B") {
+    ctx.translate(10, -6);
+    ctx.scale(0.992, 0.992);
+  }
+
+  // Subtle architectural grid
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
+  ctx.lineWidth = 1;
+  for (let x = 40; x < w; x += 40) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, h);
+    ctx.stroke();
+  }
+  for (let y = 40; y < h; y += 40) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(w, y);
+    ctx.stroke();
+  }
+
+  // Horizon silhouette
+  ctx.fillStyle = "#0b1120";
+  ctx.beginPath();
+  ctx.moveTo(0, 470);
+  ctx.lineTo(180, 355);
+  ctx.lineTo(350, 425);
+  ctx.lineTo(540, 290);
+  ctx.lineTo(750, 395);
+  ctx.lineTo(w, 325);
+  ctx.lineTo(w, h);
+  ctx.lineTo(0, h);
+  ctx.closePath();
+  ctx.fill();
+
+  // Geometric resolution target & cards
+  ctx.fillStyle = "rgba(15, 23, 42, 0.86)";
+  ctx.strokeStyle = "#38bdf8";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.roundRect(120, 120, 320, 220, 18);
+  ctx.fill();
+  ctx.stroke();
+
+  // Concentric focus target
+  const cx = 280;
+  const cy = 230;
+  [70, 50, 30, 12].forEach((r, idx) => {
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.strokeStyle = idx % 2 === 0 ? "#6366f1" : "#e2e8f0";
+    ctx.lineWidth = idx === 3 ? 4 : 2;
+    ctx.stroke();
+  });
+
+  // Right card (shows visual differences between A and B for Diff/Slider testing)
+  ctx.fillStyle = variant === "A" ? "#1e293b" : "#1f293d";
+  ctx.strokeStyle = variant === "A" ? "#10b981" : "#f59e0b";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.roundRect(520, 120, 300, 220, 18);
+  ctx.fill();
+  ctx.stroke();
+
+  // Intentional color swatch edit between A & B
+  const swatches = variant === "A"
+    ? ["#ef4444", "#f59e0b", "#10b981", "#3b82f6", "#a855f7"]
+    : ["#ef4444", "#fb7185", "#10b981", "#06b6d4", "#a855f7"];
+
+  swatches.forEach((col, i) => {
+    ctx.fillStyle = col;
+    ctx.fillRect(550 + i * 50, 160, 40, 90);
+  });
+
+  // Intentional retouch element present only in B
+  if (variant === "B") {
+    ctx.fillStyle = "#f43f5e";
+    ctx.beginPath();
+    ctx.arc(778, 294, 18, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.fillStyle = "#f8fafc";
+  ctx.font = "700 20px system-ui, sans-serif";
+  ctx.fillText(variant === "A" ? "ORIGINAL FRAME A" : "EDITED FRAME B", 550, 300);
+  ctx.restore();
+
+  return new Promise((resolve) => {
+    canvas.toBlob(
+      (blob) => resolve(new File([blob], `demo_photo_${variant.toLowerCase()}.png`, { type: "image/png" })),
+      "image/png"
+    );
+  });
+}
+
+async function loadDemoPair() {
+  let fileA = null;
+  let fileB = null;
+
+  if (window.location.protocol !== "file:") {
+    try {
+      const [resA, resB] = await Promise.all([
+        fetch("./demo/sample_photo_a.png"),
+        fetch("./demo/sample_photo_b.png"),
+      ]);
+      if (resA.ok && resB.ok) {
+        const [blobA, blobB] = await Promise.all([resA.blob(), resB.blob()]);
+        fileA = new File([blobA], "sample_photo_a.png", { type: blobA.type || "image/png" });
+        fileB = new File([blobB], "sample_photo_b.png", { type: blobB.type || "image/png" });
+      }
+    } catch {
+      // Fallback to offline canvas generator below
+    }
+  }
+
+  if (!fileA || !fileB) {
+    [fileA, fileB] = await Promise.all([
+      renderProceduralDemoCanvas("A"),
+      renderProceduralDemoCanvas("B"),
+    ]);
+  }
+
+  await Promise.all([
+    loadImageFile("A", fileA, "Demo Studio"),
+    loadImageFile("B", fileB, "Demo Studio"),
+  ]);
+  showToast(i18n.t("demoLoadedHint"), { duration: 3000 });
+}
+
+function ensureBothImages() {
+  if (state.imgA && state.imgB) return true;
+  showToast(i18n.t("needBothImages"), { duration: 2400 });
+  return false;
+}
+
+/* ============================================================================
+   Settings Modal, Help Modal & Anchored Popovers
+   ============================================================================ */
+function bindSettingsDialog() {
+  setupDialogEnhancements(dom.settingsDialog, dom.btnSettings, dom.btnCloseSettings);
+
+  // Sidebar navigation inside settings modal
+  document.querySelectorAll(".settings-nav-btn[data-settings-tab]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const tab = btn.dataset.settingsTab;
+      document.querySelectorAll(".settings-nav-btn").forEach((b) => {
+        b.classList.toggle("active", b === btn);
+      });
+      document.querySelectorAll(".settings-tab-panel[data-tab-panel]").forEach((panel) => {
+        panel.classList.toggle("hidden", panel.dataset.tabPanel !== tab);
+      });
+    });
+  });
+
+  document.querySelectorAll("[data-setting-theme]").forEach((btn) => {
+    btn.addEventListener("click", () => settings.set("theme", btn.dataset.settingTheme));
+  });
+  document.querySelectorAll("[data-accent]").forEach((btn) => {
+    btn.addEventListener("click", () => settings.set("accent", btn.dataset.accent));
+  });
+  document.querySelectorAll("[data-backdrop]").forEach((btn) => {
+    btn.addEventListener("click", () => settings.set("backdrop", btn.dataset.backdrop));
+  });
+  document.querySelectorAll("[data-density]").forEach((btn) => {
+    btn.addEventListener("click", () => settings.set("density", btn.dataset.density));
+  });
+  document.querySelectorAll("[data-render]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      settings.set("imageRendering", btn.dataset.render);
+      modesCtrl.setImageRenderingPref(btn.dataset.render);
+    });
+  });
+  document.querySelectorAll("[data-zoom-speed]").forEach((btn) => {
+    btn.addEventListener("click", () => settings.set("wheelZoomSpeed", Number(btn.dataset.zoomSpeed)));
+  });
+  document.querySelectorAll("[data-curtain]").forEach((btn) => {
+    btn.addEventListener("click", () => settings.set("curtainStyle", btn.dataset.curtain));
+  });
+  document.querySelectorAll("[data-autoload]").forEach((btn) => {
+    btn.addEventListener("click", () => settings.set("autoAlignOnLoad", btn.dataset.autoload));
+  });
+  document.querySelectorAll("[data-nudge]").forEach((btn) => {
+    btn.addEventListener("click", () => settings.set("nudgeStep", Number(btn.dataset.nudge)));
+  });
+
+  dom.settingToggleProbe?.addEventListener("change", () => {
+    settings.set("pixelProbe", dom.settingToggleProbe.checked);
+    updateProbeVisibility();
+  });
+  dom.settingToggleAutohideBadges?.addEventListener("change", () => {
+    settings.set("autoHideBadges", dom.settingToggleAutohideBadges.checked);
+  });
+  dom.settingToggleAutometrics?.addEventListener("change", () => {
+    settings.set("autoComputeMetrics", dom.settingToggleAutometrics.checked);
+    if (dom.settingToggleAutometrics.checked) scheduleMetricsRecalc();
+  });
+
+  document.querySelectorAll("#setting-lang-group .lang-btn").forEach((btn) => {
+    btn.addEventListener("click", () => i18n.setLanguage(btn.dataset.lang));
+  });
+
+  dom.btnResetSettings?.addEventListener("click", () => {
+    settings.reset();
+    modesCtrl.diffStyle = settings.get("defaultDiffMode");
+    modesCtrl.diffGain = settings.get("diffGain");
+    modesCtrl.setImageRenderingPref(settings.get("imageRendering"));
+    updateDiffUI();
+    updateProbeVisibility();
+    syncSettingsUI();
+    showToast(i18n.t("settingsResetDone"));
+  });
+
+  settings.subscribe(() => {
+    syncSettingsUI();
+    updateProbeVisibility();
+  });
+}
+
+function syncSettingsUI() {
+  const s = settings.getAll();
+  const markGroup = (selector, attr, val) => {
+    document.querySelectorAll(selector).forEach((el) => {
+      el.classList.toggle("active", el.getAttribute(attr) === String(val));
+    });
+  };
+
+  markGroup("[data-setting-theme]", "data-setting-theme", s.theme);
+  markGroup("[data-accent]", "data-accent", s.accent);
+  markGroup("[data-backdrop]", "data-backdrop", s.backdrop);
+  markGroup("[data-density]", "data-density", s.density);
+  markGroup("[data-render]", "data-render", s.imageRendering);
+  markGroup("[data-zoom-speed]", "data-zoom-speed", s.wheelZoomSpeed);
+  markGroup("[data-curtain]", "data-curtain", s.curtainStyle);
+  markGroup("[data-autoload]", "data-autoload", s.autoAlignOnLoad);
+  markGroup("[data-nudge]", "data-nudge", s.nudgeStep);
+
+  if (dom.themeSystemResolved) {
+    const sysTheme = settings.getSystemTheme();
+    dom.themeSystemResolved.textContent = `(${i18n.t(
+      sysTheme === "dark" ? "themeCurrentDark" : "themeCurrentLight"
+    )})`;
+  }
+
+  if (dom.settingToggleProbe) dom.settingToggleProbe.checked = Boolean(s.pixelProbe);
+  if (dom.settingToggleAutohideBadges) {
+    dom.settingToggleAutohideBadges.checked = Boolean(s.autoHideBadges);
+  }
+  if (dom.settingToggleAutometrics) {
+    dom.settingToggleAutometrics.checked = Boolean(s.autoComputeMetrics);
+  }
+}
+
+function bindHelpDialog() {
+  setupDialogEnhancements(dom.helpDialog, dom.btnHelp, dom.btnCloseHelp);
+}
+
+function bindPopovers() {
+  setupPopoverFallback(dom.langPopover, dom.langDropdownBtn, "bottom-end");
+  setupPopoverFallback(dom.zoomPopover, dom.btnZoomPresets, "bottom-start");
+  setupPopoverFallback(dom.exportPopover, dom.btnExportAction, "top-end");
+
+  dom.langPopover?.querySelectorAll(".lang-option[data-lang]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      i18n.setLanguage(btn.dataset.lang);
+      dom.langPopover.hidePopover?.();
+    });
+  });
+}
+
+function syncDynamicTextsOnLanguageChange() {
+  syncSettingsUI();
+  updatePointBanner();
+  refreshAllImageUI();
+}
+
+/* ============================================================================
+   Keyboard Shortcuts
+   ============================================================================ */
+function bindKeyboardShortcuts() {
+  window.addEventListener("keydown", (e) => {
+    const tag = e.target?.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+
+    if ((e.ctrlKey || e.metaKey) && e.key === ",") {
+      e.preventDefault();
+      if (dom.settingsDialog?.open) {
+        closeTopLayer(dom.settingsDialog);
+      } else {
+        dom.settingsDialog?.showModal();
+      }
+      return;
+    }
+
+    if (document.querySelector("dialog[open]")) return;
+
+    if (e.key === "Escape" && state.pointModeCount > 0) {
+      cancelPointAlignMode();
+      return;
+    }
+
+    if (e.key === "1") applyModeSelection("slider");
+    else if (e.key === "2") applyModeSelection("fade");
+    else if (e.key === "3") applyModeSelection("split");
+    else if (e.key === "4") applyModeSelection("diff");
+    else if (e.key === "f" || e.key === "F" || e.key === "а" || e.key === "А") {
+      fitImagesToViewport();
+    } else if (e.key === "0") {
+      setActualSizeZoom();
+    } else if (e.key === "h" || e.key === "H" || e.key === "р" || e.key === "Р") {
+      setCurtainOrientation(modesCtrl.sliderOrientation === "vertical" ? "horizontal" : "vertical");
+    } else if (e.key === "x" || e.key === "X" || e.key === "ч" || e.key === "Ч") {
+      swapImagesAndState();
+    } else if (e.key === "b" || e.key === "B" || e.key === "и" || e.key === "И") {
+      state.showFilenames = !state.showFilenames;
+      updateFilenamesToggleUI();
+    } else if (e.key === "i" || e.key === "I" || e.key === "ш" || e.key === "Ш") {
+      settings.set("pixelProbe", !settings.get("pixelProbe"));
+      updateProbeVisibility();
+      syncSettingsUI();
+    } else if (e.code === "Space" && !e.repeat) {
+      const isFocusedControl =
+        tag === "BUTTON" ||
+        tag === "A" ||
+        document.activeElement?.getAttribute("role") === "slider";
+      if (!isFocusedControl && (state.imgA || state.imgB)) {
+        e.preventDefault();
+        state.isFlashing = true;
+        state.opacityBeforeFlash = modesCtrl.opacity;
+        if (modesCtrl.currentMode !== "fade") applyModeSelection("fade");
+        const flashVal = state.opacityBeforeFlash > 0.5 ? 0 : 1;
+        modesCtrl.setOpacity(flashVal);
+        updateOpacityUI(flashVal);
+      }
+    } else if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
+      if (document.activeElement === modesCtrl.curtainHandle) return;
+      if (!state.imgA && !state.imgB) return;
+      e.preventDefault();
+      const dirs = {
+        ArrowUp: [0, -1],
+        ArrowDown: [0, 1],
+        ArrowLeft: [-1, 0],
+        ArrowRight: [1, 0],
+      };
+      const [dx, dy] = dirs[e.key];
+      if (viewer.alignTarget !== "none") {
+        const base = Number(settings.get("nudgeStep")) || 1;
+        const mult = e.shiftKey ? 10 : base;
+        if (viewer.alignTarget === "A") {
+          viewer.nudgeA(dx * mult, dy * mult);
+        } else {
+          viewer.nudgeB(dx * mult, dy * mult);
+        }
+        scheduleMetricsRecalc();
+      } else {
+        const panStep = e.shiftKey ? 80 : 20;
+        viewer.pan(dx * -panStep, dy * -panStep, "both");
+      }
+    }
+  });
+
+  window.addEventListener("keyup", (e) => {
+    if (e.code === "Space" && state.isFlashing) {
+      state.isFlashing = false;
+      modesCtrl.setOpacity(state.opacityBeforeFlash);
+      updateOpacityUI(state.opacityBeforeFlash);
+    }
+  });
+}

@@ -237,6 +237,12 @@ function computeZNCC(mapA, wA, hA, mapB, wB, hB, dx, dy) {
   const startX = Math.max(0, -dx);
   const endX = Math.min(wA, wB - dx);
 
+  const overlapW = endX - startX;
+  const overlapH = endY - startY;
+  const minW = Math.min(wA, wB);
+  const minH = Math.min(hA, hB);
+  if (overlapW < minW * 0.45 || overlapH < minH * 0.45) return -1;
+
   let sumA = 0, sumB = 0;
   let count = 0;
 
@@ -254,7 +260,7 @@ function computeZNCC(mapA, wA, hA, mapB, wB, hB, dx, dy) {
     }
   }
 
-  if (count < 25) return -1;
+  if (count < 120) return -1;
 
   const meanA = sumA / count;
   const meanB = sumB / count;
@@ -278,5 +284,10 @@ function computeZNCC(mapA, wA, hA, mapB, wB, hB, dx, dy) {
   }
 
   const denom = Math.sqrt(denA * denB);
-  return denom > 0 ? num / denom : -1;
+  if (denom <= 0) return -1;
+  const overlapArea = overlapW * overlapH;
+  const maxOverlap = Math.min(wA * hA, wB * hB);
+  const coverage = Math.min(1, overlapArea / Math.max(1, maxOverlap));
+  // Mildly weight by overlap coverage so tiny slivers cannot beat broad frame alignment
+  return (num / denom) * (0.55 + 0.45 * coverage);
 }

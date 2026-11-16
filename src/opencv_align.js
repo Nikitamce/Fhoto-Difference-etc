@@ -1,12 +1,12 @@
 let cvReady = false;
 let cvPromise = null;
 
-export async function loadOpenCV(onStatus) {
+export async function loadOpenCV(onStatus, msgs = {}) {
   if (cvReady && window.cv && window.cv.Mat) return true;
   
   if (!cvPromise) {
     cvPromise = (async () => {
-      onStatus("Загрузка и компиляция оффлайн библиотеки OpenCV...");
+      onStatus?.(msgs.compiling || "Загрузка и компиляция оффлайн библиотеки OpenCV...");
       // Dynamically import raw text of embedded opencv.js
       const opencvModule = await import("./opencv.js?raw");
       const opencvCode = opencvModule.default;
@@ -48,12 +48,12 @@ function imageToCanvas(img) {
   return canvas;
 }
 
-export function computeOpenCVAlignment(imgAObj, imgBObj, onStatus) {
+export function computeOpenCVAlignment(imgAObj, imgBObj, onStatus, msgs = {}) {
   return new Promise((resolve, reject) => {
     setTimeout(() => {
       try {
         const cv = window.cv;
-        onStatus("Подготовка изображений...");
+        onStatus?.(msgs.preparing || "Подготовка изображений...");
         
         const canvasA = imageToCanvas(imgAObj);
         const canvasB = imageToCanvas(imgBObj);
@@ -66,7 +66,7 @@ export function computeOpenCVAlignment(imgAObj, imgBObj, onStatus) {
         cv.cvtColor(matA, grayA, cv.COLOR_RGBA2GRAY);
         cv.cvtColor(matB, grayB, cv.COLOR_RGBA2GRAY);
         
-        onStatus("Поиск ключевых точек (ORB)...");
+        onStatus?.(msgs.keypoints || "Поиск ключевых точек (ORB)...");
         // Limit to 2000 features to keep it relatively fast
         let orb = new cv.ORB(2000); 
         
@@ -78,7 +78,7 @@ export function computeOpenCVAlignment(imgAObj, imgBObj, onStatus) {
         let descriptorsB = new cv.Mat();
         orb.detectAndCompute(grayB, new cv.Mat(), keypointsB, descriptorsB);
         
-        onStatus("Сопоставление точек...");
+        onStatus?.(msgs.matching || "Сопоставление точек...");
         // Match B to A
         let matcher = new cv.BFMatcher(cv.NORM_HAMMING, true);
         let matches = new cv.DMatchVector();
@@ -96,10 +96,10 @@ export function computeOpenCVAlignment(imgAObj, imgBObj, onStatus) {
         let goodMatches = matchArray.slice(0, numGoodMatches);
         
         if (goodMatches.length < 4) {
-          throw new Error("Недостаточно совпадающих точек.");
+          throw new Error(msgs.notEnoughPoints || "Недостаточно совпадающих точек.");
         }
         
-        onStatus("Рассчет перспективы (RANSAC)...");
+        onStatus?.(msgs.ransac || "Рассчет перспективы (RANSAC)...");
         let ptsA = new cv.Mat(goodMatches.length, 1, cv.CV_32FC2);
         let ptsB = new cv.Mat(goodMatches.length, 1, cv.CV_32FC2);
         

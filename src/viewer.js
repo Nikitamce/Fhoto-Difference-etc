@@ -1,26 +1,31 @@
+import { invert3x3 } from "./metadata.js";
+
 export class SynchronizedViewer {
   constructor(options = {}) {
-    this.scale = 1.0; // 1.0 = 100%, 10.0 = 1000%, 0.1 = 10%
+    this.scale = 1.0; // 0.1 = 10% .. 10.0 = 1000%
     this.panX = 0;
     this.panY = 0;
-    
-    // Offset of Image B relative to Image A (in unscaled source coordinates)
+
+    // Independent Pane B viewport offset used only when syncEnabled === false in Split mode
+    this.syncEnabled = true;
+    this.splitScaleB = 1.0;
+    this.splitPanBX = 0;
+    this.splitPanBY = 0;
+
+    // Offset of Image B relative to Image A (in unscaled Image A-normalized coordinates)
     this.offsetX = 0;
     this.offsetY = 0;
 
-    // Relative scale multiplier for Image B relative to Image A (default 1.0)
-    this.scaleRatioB = 1.0;
-    // Relative scale multiplier for Image A (default 1.0)
+    // Relative scale multipliers
     this.scaleRatioA = 1.0;
+    this.scaleRatioB = 1.0;
 
-    this.alignTarget = 'none'; // 'none' | 'A' | 'B'
-    this.isDragging = false;
-    this.dragStart = { x: 0, y: 0 };
+    this.transformMatrixB = null; // 6-element affine or 16-element matrix3d
 
+    this.alignTarget = "none"; // "none" | "A" | "B"
     this.imgA = null;
     this.imgB = null;
 
-    // Callbacks
     this.onStateChange = options.onStateChange || (() => {});
   }
 
@@ -29,15 +34,28 @@ export class SynchronizedViewer {
     this.imgB = imgB;
     this.scaleRatioA = 1.0;
     this.scaleRatioB = 1.0;
+    this.transformMatrixB = null;
     this.centerBoth();
   }
 
   get isAligning() {
-    return this.alignTarget !== 'none';
+    return this.alignTarget !== "none";
   }
 
   setAlignTarget(target) {
-    this.alignTarget = target; // 'none' | 'A' | 'B'
+    this.alignTarget = target; // "none" | "A" | "B"
+    this.onStateChange();
+  }
+
+  setSyncEnabled(enabled) {
+    if (this.syncEnabled === enabled) return;
+    this.syncEnabled = enabled;
+    if (!enabled) {
+      const trB = this.getTransformB();
+      this.splitScaleB = trB.scale;
+      this.splitPanBX = trB.x;
+      this.splitPanBY = trB.y;
+    }
     this.onStateChange();
   }
 
@@ -52,7 +70,6 @@ export class SynchronizedViewer {
     const wA = this.imgA.naturalWidth || this.imgA.width || 800;
     const hA = this.imgA.naturalHeight || this.imgA.height || 600;
 
-    // Scale around the CENTER of Image A
     const centerX = this.panX + (wA * this.scale * this.scaleRatioA) / 2;
     const centerY = this.panY + (hA * this.scale * this.scaleRatioA) / 2;
 
@@ -75,7 +92,6 @@ export class SynchronizedViewer {
     const wB = this.imgB.naturalWidth || this.imgB.width || 800;
     const hB = this.imgB.naturalHeight || this.imgB.height || 600;
 
-    // Scale around the CENTER of Image B
     const centerX = this.offsetX + (wB * this.scaleRatioB) / 2;
     const centerY = this.offsetY + (hB * this.scaleRatioB) / 2;
 
@@ -90,13 +106,14 @@ export class SynchronizedViewer {
   matchImageSizes() {
     if (!this.imgA || !this.imgB) return;
 
-    const wA = this.imgA.naturalWidth || this.imgA.width;
-    const hA = this.imgA.naturalHeight || this.imgA.height;
+    const wA = (this.imgA.naturalWidth || this.imgA.width) * this.scaleRatioA;
+    const hA = (this.imgA.naturalHeight || this.imgA.height) * this.scaleRatioA;
     const wB = this.imgB.naturalWidth || this.imgB.width;
     const hB = this.imgB.naturalHeight || this.imgB.height;
 
     if (!wA || !wB || !hA || !hB) return;
 
+    this.transformMatrixB = null;
     const widthRatio = wA / wB;
     const heightRatio = hA / hB;
 
@@ -111,101 +128,166 @@ export class SynchronizedViewer {
   }
 
   alignByTwoPoints(ptA1, ptA2, ptB1, ptB2) {
-    // pt = { x, y } in unscaled image source pixels
-    const distA = Math.hypot(ptA2.x - ptA1.x, ptA2.y - ptA1.y);
+    const sA = this.scaleRatioA || 1.0;
+    const distA = Math.hypot((ptA2.x - ptA1.x) * sA, (ptA2.y - ptA1.y) * sA);
     const distB = Math.hypot(ptB2.x - ptB1.x, ptB2.y - ptB1.y);
 
     if (distA <= 0 || distB <= 0) return;
 
+    this.transformMatrixB = null;
     const reqScaleB = distA / distB;
-    this.scaleRatioB = reqScaleB;
+    this.scaleRatioB = Math.max(0.1, Math.min(10.0, reqScaleB));
 
-    // Align ptB1 with ptA1
-    this.offsetX = ptA1.x - ptB1.x * reqScaleB;
-    this.offsetY = ptA1.y - ptB1.y * reqScaleB;
+    this.offsetX = ptA1.x * sA - ptB1.x * this.scaleRatioB;
+    this.offsetY = ptA1.y * sA - ptB1.y * this.scaleRatioB;
 
     this.onStateChange();
   }
 
   alignByOnePoint(ptA, ptB) {
     if (!ptA || !ptB) return;
-    this.offsetX = ptA.x - ptB.x * this.scaleRatioB;
-    this.offsetY = ptA.y - ptB.y * this.scaleRatioB;
+    const sA = this.scaleRatioA || 1.0;
+    this.transformMatrixB = null;
+    this.offsetX = ptA.x * sA - ptB.x * this.scaleRatioB;
+    this.offsetY = ptA.y * sA - ptB.y * this.scaleRatioB;
     this.onStateChange();
   }
 
-  setZoom(newScale, focalX = null, focalY = null, containerRect = null) {
+  setZoom(newScale, focalX = null, focalY = null, containerRect = null, targetPane = "both") {
     const clampedScale = Math.max(0.1, Math.min(10.0, newScale));
-    
+
+    if (!this.syncEnabled && targetPane === "B") {
+      if (focalX !== null && focalY !== null && containerRect) {
+        const relX = focalX - containerRect.left;
+        const relY = focalY - containerRect.top;
+        const factor = clampedScale / this.splitScaleB;
+        this.splitPanBX = relX - (relX - this.splitPanBX) * factor;
+        this.splitPanBY = relY - (relY - this.splitPanBY) * factor;
+      }
+      this.splitScaleB = clampedScale;
+      this.onStateChange();
+      return;
+    }
+
     if (focalX !== null && focalY !== null && containerRect) {
       const relX = focalX - containerRect.left;
       const relY = focalY - containerRect.top;
       const factor = clampedScale / this.scale;
-      
+
       this.panX = relX - (relX - this.panX) * factor;
       this.panY = relY - (relY - this.panY) * factor;
     }
-    
+
     this.scale = clampedScale;
     this.onStateChange();
   }
 
-  pan(deltaX, deltaY) {
-    if (this.alignTarget === 'B') {
-      // Move image B offset in unscaled coordinates
-      this.offsetX += deltaX / this.scale;
-      this.offsetY += deltaY / this.scale;
-    } else if (this.alignTarget === 'A') {
-      // Move image A while keeping image B stationary on screen
+  pan(deltaX, deltaY, targetPane = "both") {
+    if (this.alignTarget === "B") {
+      this.nudgeB(deltaX / this.scale, deltaY / this.scale);
+      return;
+    }
+
+    if (this.alignTarget === "A") {
       this.panX += deltaX;
       this.panY += deltaY;
-      this.offsetX -= deltaX / (this.scale * this.scaleRatioB);
-      this.offsetY -= deltaY / (this.scale * this.scaleRatioB);
+      this.nudgeB(-deltaX / this.scale, -deltaY / this.scale);
+      return;
+    }
+
+    if (!this.syncEnabled && targetPane === "B") {
+      this.splitPanBX += deltaX;
+      this.splitPanBY += deltaY;
+      this.onStateChange();
+      return;
+    }
+
+    this.panX += deltaX;
+    this.panY += deltaY;
+    this.onStateChange();
+  }
+
+  panBy(deltaX, deltaY, targetPane = "both") {
+    this.pan(deltaX, deltaY, targetPane);
+  }
+
+  nudgeB(dxImgPixels, dyImgPixels) {
+    if (this.transformMatrixB) {
+      if (this.transformMatrixB.length === 6) {
+        this.transformMatrixB[4] += dxImgPixels;
+        this.transformMatrixB[5] += dyImgPixels;
+      } else if (this.transformMatrixB.length === 16) {
+        this.transformMatrixB[12] += dxImgPixels * this.transformMatrixB[15];
+        this.transformMatrixB[13] += dyImgPixels * this.transformMatrixB[15];
+      }
     } else {
-      // Synced pan both
-      this.panX += deltaX;
-      this.panY += deltaY;
+      this.offsetX += dxImgPixels;
+      this.offsetY += dyImgPixels;
     }
     this.onStateChange();
   }
 
-  panBy(deltaX, deltaY) {
-    this.pan(deltaX, deltaY);
+  nudgeA(dxImgPixels, dyImgPixels) {
+    this.panX += dxImgPixels * this.scale;
+    this.panY += dyImgPixels * this.scale;
+    this.nudgeB(-dxImgPixels, -dyImgPixels);
   }
 
-  centerBoth(containerWidth = 800, containerHeight = 600) {
-    if (!this.imgA) return;
+  centerBoth(containerWidth = 800, containerHeight = 600, mode = "slider") {
+    if (!this.imgA && !this.imgB) return;
 
-    const wA = this.imgA.naturalWidth || this.imgA.width || 800;
-    const hA = this.imgA.naturalHeight || this.imgA.height || 600;
+    const refImg = this.imgA || this.imgB;
+    const wRef = (refImg.naturalWidth || refImg.width || 800) * (this.imgA ? this.scaleRatioA : this.scaleRatioB);
+    const hRef = (refImg.naturalHeight || refImg.height || 600) * (this.imgA ? this.scaleRatioA : this.scaleRatioB);
 
-    const scaleX = (containerWidth * 0.85) / wA;
-    const scaleY = (containerHeight * 0.85) / hA;
+    const effW = mode === "split" ? containerWidth / 2 : containerWidth;
+    const scaleX = (effW * 0.88) / wRef;
+    const scaleY = (containerHeight * 0.88) / hRef;
     this.scale = Math.max(0.1, Math.min(2.0, Math.min(scaleX, scaleY)));
 
-    this.panX = (containerWidth - wA * this.scale) / 2;
-    this.panY = (containerHeight - hA * this.scale) / 2;
+    this.panX = (effW - wRef * this.scale) / 2;
+    this.panY = (containerHeight - hRef * this.scale) / 2;
 
-    if (this.imgB) {
-      const wB = (this.imgB.naturalWidth || this.imgB.width || wA) * this.scaleRatioB;
-      const hB = (this.imgB.naturalHeight || this.imgB.height || hA) * this.scaleRatioB;
+    if (this.imgA && this.imgB && !this.transformMatrixB) {
+      const wA = (this.imgA.naturalWidth || this.imgA.width) * this.scaleRatioA;
+      const hA = (this.imgA.naturalHeight || this.imgA.height) * this.scaleRatioA;
+      const wB = (this.imgB.naturalWidth || this.imgB.width) * this.scaleRatioB;
+      const hB = (this.imgB.naturalHeight || this.imgB.height) * this.scaleRatioB;
       this.offsetX = (wA - wB) / 2;
       this.offsetY = (hA - hB) / 2;
-    } else {
+    } else if (!this.transformMatrixB) {
       this.offsetX = 0;
       this.offsetY = 0;
+    }
+
+    if (!this.syncEnabled) {
+      const trB = this.getTransformB();
+      this.splitScaleB = trB.scale;
+      this.splitPanBX = trB.x;
+      this.splitPanBY = trB.y;
     }
 
     this.onStateChange();
   }
 
   swapImages() {
-    const temp = this.imgA;
+    const tempImg = this.imgA;
     this.imgA = this.imgB;
-    this.imgB = temp;
-    this.scaleRatioB = 1 / this.scaleRatioB;
+    this.imgB = tempImg;
+
+    if (this.transformMatrixB) {
+      this.transformMatrixB = null;
+    }
+
+    const oldSA = this.scaleRatioA;
+    const oldSB = this.scaleRatioB;
+    this.panX = this.panX + this.offsetX * this.scale;
+    this.panY = this.panY + this.offsetY * this.scale;
     this.offsetX = -this.offsetX;
     this.offsetY = -this.offsetY;
+    this.scaleRatioA = oldSB;
+    this.scaleRatioB = oldSA;
+
     this.onStateChange();
   }
 
@@ -213,37 +295,112 @@ export class SynchronizedViewer {
     return {
       x: this.panX,
       y: this.panY,
-      scale: this.scale * this.scaleRatioA
+      scale: this.scale * this.scaleRatioA,
     };
   }
 
   getTransformB() {
     if (this.transformMatrixB) {
-      // If we have an affine or homography matrix, we apply global pan/zoom
-      // and then the matrix. The scaleRatioB and offset are handled by the matrix.
       const is3d = this.transformMatrixB.length === 16;
-      const matrixStr = is3d 
-        ? `matrix3d(${this.transformMatrixB.join(',')})`
-        : `matrix(${this.transformMatrixB.join(',')})`;
-      
+      const matrixStr = is3d
+        ? `matrix3d(${this.transformMatrixB.join(",")})`
+        : `matrix(${this.transformMatrixB.join(",")})`;
+
       return {
         x: this.panX,
         y: this.panY,
         scale: this.scale,
-        matrix: matrixStr
+        matrix: matrixStr,
       };
     }
 
     return {
       x: this.panX + this.offsetX * this.scale,
       y: this.panY + this.offsetY * this.scale,
-      scale: this.scale * this.scaleRatioB
+      scale: this.scale * this.scaleRatioB,
     };
   }
 
+  getSplitTransformB() {
+    if (!this.syncEnabled) {
+      if (this.transformMatrixB) {
+        const is3d = this.transformMatrixB.length === 16;
+        const matrixStr = is3d
+          ? `matrix3d(${this.transformMatrixB.join(",")})`
+          : `matrix(${this.transformMatrixB.join(",")})`;
+        return {
+          x: this.splitPanBX,
+          y: this.splitPanBY,
+          scale: this.splitScaleB,
+          matrix: matrixStr,
+        };
+      }
+      return {
+        x: this.splitPanBX,
+        y: this.splitPanBY,
+        scale: this.splitScaleB,
+      };
+    }
+    return this.getTransformB();
+  }
+
+  mapViewportToImageA(vpX, vpY) {
+    const trA = this.getTransformA();
+    if (!trA.scale) return null;
+    return {
+      x: (vpX - trA.x) / trA.scale,
+      y: (vpY - trA.y) / trA.scale,
+    };
+  }
+
+  mapViewportToImageB(vpX, vpY, isSplitPaneB = false) {
+    const trB = isSplitPaneB ? this.getSplitTransformB() : this.getTransformB();
+    if (!trB.scale) return null;
+
+    const u = (vpX - trB.x) / trB.scale;
+    const v = (vpY - trB.y) / trB.scale;
+
+    if (!this.transformMatrixB) {
+      return { x: u, y: v };
+    }
+
+    if (this.transformMatrixB.length === 6) {
+      const [a, b, c, d, e, f] = this.transformMatrixB;
+      const det = a * d - b * c;
+      if (Math.abs(det) < 1e-10) return { x: u, y: v };
+      const du = u - e;
+      const dv = v - f;
+      return {
+        x: (d * du - c * dv) / det,
+        y: (-b * du + a * dv) / det,
+      };
+    }
+
+    if (this.transformMatrixB.length === 16) {
+      const m = this.transformMatrixB;
+      const H = [
+        m[0], m[4], m[12],
+        m[1], m[5], m[13],
+        m[3], m[7], m[15],
+      ];
+      const Hinv = invert3x3(H);
+      if (!Hinv) return { x: u, y: v };
+      const denom = Hinv[6] * u + Hinv[7] * v + Hinv[8];
+      if (Math.abs(denom) < 1e-10) return { x: u, y: v };
+      return {
+        x: (Hinv[0] * u + Hinv[1] * v + Hinv[2]) / denom,
+        y: (Hinv[3] * u + Hinv[4] * v + Hinv[5]) / denom,
+      };
+    }
+
+    return { x: u, y: v };
+  }
+
   alignByThreePoints(ptsA, ptsB) {
-    import('./transform_math.js').then(({ solveAffine }) => {
-      const matrix = solveAffine(ptsB, ptsA);
+    const sA = this.scaleRatioA || 1.0;
+    const scaledPtsA = ptsA.map((p) => ({ x: p.x * sA, y: p.y * sA }));
+    import("./transform_math.js").then(({ solveAffine }) => {
+      const matrix = solveAffine(ptsB, scaledPtsA);
       if (matrix) {
         this.transformMatrixB = matrix;
         this.onStateChange();
@@ -254,8 +411,10 @@ export class SynchronizedViewer {
   }
 
   alignByFourPoints(ptsA, ptsB) {
-    import('./transform_math.js').then(({ solveHomography }) => {
-      const matrix = solveHomography(ptsB, ptsA);
+    const sA = this.scaleRatioA || 1.0;
+    const scaledPtsA = ptsA.map((p) => ({ x: p.x * sA, y: p.y * sA }));
+    import("./transform_math.js").then(({ solveHomography }) => {
+      const matrix = solveHomography(ptsB, scaledPtsA);
       if (matrix) {
         this.transformMatrixB = matrix;
         this.onStateChange();
@@ -269,5 +428,12 @@ export class SynchronizedViewer {
     this.transformMatrixB = null;
     this.onStateChange();
   }
-}
 
+  resetAll(containerWidth, containerHeight, mode = "slider") {
+    this.transformMatrixB = null;
+    this.scaleRatioA = 1.0;
+    this.scaleRatioB = 1.0;
+    this.alignTarget = "none";
+    this.centerBoth(containerWidth, containerHeight, mode);
+  }
+}
