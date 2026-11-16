@@ -1689,3 +1689,18 @@ button:focus-visible, input:focus-visible, label:focus-visible { outline: 2px so
     animation-iteration-count: 1 !important;
   }
 }
+
+.sync-indicator {
+  cursor: default;
+  pointer-events: none;
+  color: #b8c3d6;
+}
+.sync-indicator svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: #8ee3bf;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
