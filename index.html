@@ -177,9 +177,10 @@
             <button id="btn-swap" class="btn-quick">
               ⇄ <span data-i18n="swapPhotos">Поменять местами</span>
             </button>
-            <button id="btn-quick-sync-zoom" class="btn-quick active">
-              🔗 <span data-i18n="syncZoom">Синхронизировать зум</span>
-            </button>
+            <div id="btn-quick-sync-zoom" class="btn-quick active sync-indicator" role="status" aria-label="Масштаб синхронизирован">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.1 0l2.1-2.1a5 5 0 0 0-7.1-7.1l-1.2 1.2"/><path d="M14 11a5 5 0 0 0-7.1 0l-2.1 2.1a5 5 0 0 0 7.1 7.1l1.2-1.2"/></svg>
+              <span data-i18n="syncZoom">Синхронизировать зум</span>
+            </div>
             <button id="btn-quick-fit" class="btn-quick">
               ⛶ <span data-i18n="fitWindow">По размеру окна</span>
             </button>
