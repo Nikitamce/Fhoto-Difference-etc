@@ -12,7 +12,7 @@ It allows you to load two images, align them using AI or multi-point geometric t
 
 ## ✨ Key Features
 
-- 🚀 **100% Offline & Single-File Portable**: Runs directly in any web browser without installation (`PhotoCheck_Portable.html`). Includes embedded OpenCV.js engine and zero external server dependencies.
+- 🔒 **Local processing**: selected images are processed in the browser on your computer; after dependencies are installed, photographs are not uploaded to a server. No remote web fonts are required.
 - 🔍 **4 Versatile Comparison Modes**:
   - **Curtain (Slider)**: Drag an interactive vertical or horizontal curtain line to slice between Image A and Image B.
   - **Overlay (Fade)**: Adjust Image A transparency (0% to 100%), with manual flash and auto-blink interval controls.
@@ -27,34 +27,47 @@ It allows you to load two images, align them using AI or multi-point geometric t
   - **4-Point Perspective Warp**: Homography transformation to correct tilted document scans, angled camera shots, or distorted photos.
 - 🔎 **Ultra-Zoom up to 1000%**: Synchronized panning and focal-point mouse wheel zooming up to 10x magnification.
 - 🌐 **Full Multi-Language Support (i18n)**: On-the-fly switching between English 🇬🇧 and Russian 🇷🇺.
-- 📊 **Metadata & Inspection Panel**: Detailed resolution, file format, file size, color depth, alpha channel, and DPI inspection.
+- 📊 **Metadata & Inspection Panel**: image resolution, file format, file size, and modified date. EXIF, ICC profile, DPI, and bit depth are not extracted by this version and are clearly marked as unavailable.
+- 🎨 **PhotoCheck Studio UI**: a redesigned workspace with dedicated Auto, Points, and Adjust tool tabs plus a Files / Compare / Details inspector.
+- 🧩 **Three workspace layouts**: Standard, Focus (hide side panels), and Inspect; the selected layout is remembered locally.
+- ⚡ **One-click comparison presets**: Curtain, Overlay, Side-by-Side, Difference, and Blink.
+- 📤 **PNG export**: save the current comparison composition, both originals side by side, or either source image individually.
+- 🧪 **Demo pair**: load two sample images in development mode without browsing for files.
 
 ---
 
 ## 🚀 Quick Start
 
-### Method 1: Portable HTML File (No Installation Required)
-Simply download [**`PhotoCheck_Portable.html`**](PhotoCheck_Portable.html) from this repository and open it in any modern web browser (Chrome, Firefox, Edge, Safari, Opera).
+> **Important:** do not open `index.html` by double-clicking it. Browsers block ES modules on `file://` URLs, so the UI can appear while its buttons remain unbound.
 
-### Method 2: Local Development Setup
+### Easiest local launch (no npm install)
+
+1. Install **Node.js 18 or newer** from <https://nodejs.org/>.
+2. Extract the entire project archive.
+3. On Windows, run `START-WINDOWS.bat`.
+4. Open `http://127.0.0.1:4173/`. Keep the server window open while using PhotoCheck.
+
+This uses the included `server.mjs` and does not require installing npm packages.
+
+### Terminal launch on any OS
 ```bash
-# 1. Clone repository
-git clone https://github.com/Nikitamce/Fhoto-Difference-etc.git
-cd Fhoto-Difference-etc
+node server.mjs
+```
+Then open `http://127.0.0.1:4173/`.
 
-# 2. Install dependencies
-npm install
-
-# 3. Start local development server
+### Vite development setup
+```bash
+npm ci
 npm run dev
 ```
+Open the local URL printed by Vite (usually `http://localhost:5173`). Image processing runs locally in the browser.
 
 ### Build Single-File HTML Output
 To bundle the application into a single standalone HTML file:
 ```bash
 npm run build
 ```
-The output will be created in `dist/index.html`. Copy `dist/index.html` to `PhotoCheck_Portable.html`.
+The standalone HTML output is created at `dist/index.html`. You may rename it to `PhotoCheck_Portable.html` and open it in a modern browser. The generated portable file is intentionally not included in this source archive; rebuild it from the current sources after changes.
 
 ---
 
@@ -109,7 +122,7 @@ We welcome contributions to translate **PhotoCheck** into new languages (German,
    ```bash
    npm run build
    git checkout -b feature/add-german-translation
-   git add src/i18n.js index.html PhotoCheck_Portable.html
+   git add src/i18n.js index.html styles.css
    git commit -m "feat(i18n): Add German translation"
    git push origin feature/add-german-translation
    ```

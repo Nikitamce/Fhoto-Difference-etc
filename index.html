@@ -4,29 +4,57 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title data-i18n="appTitle">PhotoCheck — Visual Photo Comparison</title>
-  <meta name="theme-color" content="#0b1020" />
-  <meta name="description" content="PhotoCheck — локальная студия визуального сравнения изображений." />
   <link rel="stylesheet" href="./styles.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='3' y='3' width='58' height='58' rx='15' fill='%238b7cff'/%3E%3Cpath d='M17 16h30v32H17z' fill='white' opacity='.95'/%3E%3Cpath d='m22 41 8-10 5 6 4-5 5 9z' fill='%238b7cff'/%3E%3C/svg%3E" />
+  <script>
+    // ES modules are blocked by browsers when this app is opened as file://.
+    // Show a clear launch instruction instead of leaving every control inert.
+    if (location.protocol === "file:") {
+      document.addEventListener("DOMContentLoaded", () => {
+        const notice = document.createElement("div");
+        notice.id = "local-server-required-notice";
+        notice.setAttribute("role", "alertdialog");
+        notice.setAttribute("aria-modal", "true");
+        notice.setAttribute("aria-labelledby", "local-server-required-title");
+        notice.style.cssText = [
+          "position:fixed", "inset:0", "z-index:2147483647", "display:grid", "place-items:center",
+          "padding:24px", "background:rgba(5,8,14,.94)", "color:#edf1fb",
+          "font:15px/1.55 Inter,system-ui,sans-serif"
+        ].join(";");
+        notice.innerHTML = `
+          <section style="width:min(540px,100%);padding:30px;border:1px solid rgba(167,155,255,.28);border-radius:18px;background:#121a28;box-shadow:0 24px 80px rgba(0,0,0,.5)">
+            <div style="font-size:12px;font-weight:800;letter-spacing:.14em;color:#a99bff;margin-bottom:10px">PHOTOCHECK STUDIO</div>
+            <h2 id="local-server-required-title" style="font-size:23px;line-height:1.2;margin:0 0 12px">Запустите приложение через локальный сервер</h2>
+            <p style="color:#aab5c8;margin:0 0 16px">Вы открыли index.html напрямую. В таком режиме браузер блокирует JavaScript-модули, поэтому кнопки и обработка изображений не могут работать.</p>
+            <p style="margin:0 0 14px">Для обычного использования откройте автономный файл <strong>PhotoCheck-Portable.html</strong> — он работает двойным щелчком, без Node.js.</p>
+            <p style="margin:0 0 8px">Для разработки исходников закройте эту вкладку и запустите <strong>START-WINDOWS.bat</strong> из распакованной папки проекта.</p>
+            <p style="color:#aab5c8;margin:0">Для исходников нужен Node.js 18 или новее. Адрес приложения будет показан в окне запуска.</p>
+            <a href="./PhotoCheck-Portable.html" style="display:inline-flex;align-items:center;justify-content:center;margin-top:18px;padding:12px 18px;border-radius:11px;background:linear-gradient(135deg,#8b7cff,#6856df);color:white;font-weight:700;text-decoration:none">Открыть автономный PhotoCheck</a>
+          </section>`;
+        document.body.append(notice);
+      }, { once: true });
+    }
+  </script>
 </head>
 <body>
   <div id="app">
     <!-- Header Navbar -->
     <header class="app-header">
       <div class="header-left">
-        <button class="panel-toggle-btn" id="btn-collapse-left" title="Свернуть/Развернуть панель" aria-label="Свернуть левую панель"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+        <button class="panel-toggle-btn" id="btn-collapse-left" title="Свернуть/Развернуть панель">☰</button>
         <div class="logo-group">
           <div class="logo-icon">
             <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
               <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-9 14l-3.5-4.5l2.5 3.01L11.5 13.5l3.5-4.5l4.5 6H10z"/>
             </svg>
           </div>
-          <h1>PhotoCheck <span class="subtitle">STUDIO</span></h1>
+          <h1>PhotoCheck</h1>
         </div>
       </div>
 
-      <div class="header-center" role="toolbar" aria-label="Панель просмотра">
+      <div class="header-center">
         <!-- View Mode Segmented Control -->
-        <div class="segmented-control" id="mode-selector" role="group" aria-label="Режим сравнения">
+        <div class="segmented-control" id="mode-selector">
           <button class="btn-seg active" data-mode="slider" data-i18n-title="modeSlider">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M13 3h-2v18h2V3zm-5 4H4v10h4V7zm12 0h-4v10h4V7z"/></svg>
             <span data-i18n="modeSlider">Шторка (Slider)</span>
@@ -42,7 +70,7 @@
         </div>
 
         <!-- Slider Orientation -->
-        <div class="segmented-control" id="group-slider-controls" role="group" aria-label="Ориентация разделителя">
+        <div class="segmented-control" id="group-slider-controls">
           <button class="btn-seg active" id="btn-slider-vertical" data-i18n-title="orientationHoriz">
             ↔ <span data-i18n="orientationHoriz">Вертикальная линия</span>
           </button>
@@ -54,13 +82,12 @@
         <!-- Zoom Bar -->
         <div class="header-zoom-group">
           <button id="btn-zoom-out" class="btn-icon" title="Уменьшить">-</button>
-          <input type="range" id="zoom-range" min="10" max="1000" step="1" value="100" class="range-input header-zoom-range" />
+          <input type="range" id="zoom-range" data-i18n-aria-label="zoomRangeLabel" aria-label="Масштаб просмотра" min="10" max="1000" step="1" value="100" class="range-input header-zoom-range" />
           <button id="btn-zoom-in" class="btn-icon" title="Увеличить">+</button>
           <span id="zoom-val" class="val-badge">100%</span>
 
           <div class="segmented-control">
-            <button class="btn-seg" id="btn-zoom-100">100%</button>
-            <button class="btn-seg" id="btn-zoom-11">1:1</button>
+            <button class="btn-seg" id="btn-zoom-11" title="Масштаб 1:1">1:1</button>
             <button class="btn-seg" id="btn-zoom-fit" data-i18n-title="fitWindow" title="По размеру окна">⛶</button>
           </div>
         </div>
@@ -80,59 +107,98 @@
           </div>
         </div>
 
-        <button class="btn-icon help-button" id="btn-help" title="Справка" aria-label="Открыть справку">?</button>
-        <button class="panel-toggle-btn" id="btn-collapse-right" title="Свернуть/Развернуть правую панель" aria-label="Свернуть правую панель"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+        <button class="btn-icon" id="btn-help" title="Справка">?</button>
+        <button class="panel-toggle-btn" id="btn-collapse-right" title="Свернуть/Развернуть правую панель">☰</button>
       </div>
     </header>
+
+    <!-- Studio command bar: workspace layouts and comparison presets -->
+    <nav class="studio-toolbar" aria-label="Studio workspace controls">
+      <div class="studio-toolbar-group studio-layout-group">
+        <span class="studio-toolbar-label" data-i18n="studioWorkspace">РАБОЧЕЕ МЕСТО</span>
+        <div class="studio-pills" id="studio-layout-presets" role="group" aria-label="Workspace layout">
+          <button class="studio-pill active" type="button" data-layout="standard" aria-pressed="true" data-i18n="studioLayoutStandard">Обычное</button>
+          <button class="studio-pill" type="button" data-layout="focus" aria-pressed="false" data-i18n="studioLayoutFocus">Фокус</button>
+          <button class="studio-pill" type="button" data-layout="inspect" aria-pressed="false" data-i18n="studioLayoutInspect">Детально</button>
+        </div>
+      </div>
+      <div class="studio-toolbar-divider"></div>
+      <div class="studio-toolbar-group studio-compare-group">
+        <span class="studio-toolbar-label" data-i18n="studioCompare">СРАВНЕНИЕ</span>
+        <div class="studio-pills" id="studio-compare-presets" role="group" aria-label="Comparison presets">
+          <button class="studio-pill active" type="button" data-preset="curtain" aria-pressed="true" data-i18n="studioPresetCurtain">Шторка</button>
+          <button class="studio-pill" type="button" data-preset="overlay" aria-pressed="false" data-i18n="studioPresetOverlay">Наложение</button>
+          <button class="studio-pill" type="button" data-preset="split" aria-pressed="false" data-i18n="studioPresetSplit">Рядом</button>
+          <button class="studio-pill" type="button" data-preset="difference" aria-pressed="false" data-i18n="studioPresetDifference">Разница</button>
+          <button class="studio-pill" type="button" data-preset="blink" aria-pressed="false" data-i18n="studioPresetBlink">Мигание</button>
+        </div>
+      </div>
+      <div class="studio-toolbar-spacer"></div>
+      <div class="studio-live-status" id="studio-live-status" role="status" aria-live="polite">
+        <span class="studio-status-dot"></span>
+        <span id="studio-status-label" data-i18n="studioStatusWaiting">Ожидание изображений</span>
+      </div>
+    </nav>
 
     <!-- Main Workspace Layout -->
     <div class="app-main-layout">
       <!-- Left Panel: Tools & Alignment -->
       <aside class="sidebar sidebar-left" id="panel-left">
         <div class="sidebar-header">
-          <span class="sidebar-title" data-i18n="sidebarAlignment">ВЫРАВНИВАНИЕ</span>
+          <div class="sidebar-heading-stack">
+            <span class="sidebar-title" data-i18n="sidebarAlignment">ВЫРАВНИВАНИЕ</span>
+            <span class="sidebar-subtitle" data-i18n="studioToolsSubtitle">Инструменты совмещения</span>
+          </div>
           <button class="btn-panel-close" id="btn-close-left-inner" title="Свернуть">«</button>
         </div>
+        <nav class="studio-side-tabs" id="studio-tools-tabs" role="tablist" aria-label="Alignment tool categories">
+          <button class="studio-side-tab active" type="button" data-tool-tab="auto" role="tab" aria-selected="true" data-i18n="studioTabAuto">Авто</button>
+          <button class="studio-side-tab" type="button" data-tool-tab="points" role="tab" aria-selected="false" data-i18n="studioTabPoints">Точки</button>
+          <button class="studio-side-tab" type="button" data-tool-tab="adjust" role="tab" aria-selected="false" data-i18n="studioTabAdjust">Коррекция</button>
+        </nav>
 
-        <div class="sidebar-content">
-          <div class="sidebar-section">
-            <button id="btn-auto-opencv" class="btn-tool">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6 2.1 2.1m0-12.8-2.1 2.1m-8.6 8.6-2.1 2.1"/><circle cx="12" cy="12" r="5"/></svg><span data-i18n="alignAutoOpenCV">Автовыравнивание AI (OpenCV)</span>
-            </button>
-            <button id="btn-auto-edge" class="btn-tool primary-tool">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/><path d="M10 7h4M7 10v4m10-4v4m-7 3h4"/></svg><span data-i18n="alignAutoEdge">Найти контуры (Авто)</span>
-            </button>
-            <button id="btn-1point-align" class="btn-tool">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/></svg><span data-i18n="alignOnePoint">По 1 точке</span>
-            </button>
-            <button id="btn-2point-align" class="btn-tool">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="17" r="2.5"/><circle cx="18" cy="7" r="2.5"/><path d="M8 15 16 9"/></svg><span data-i18n="alignTwoPoints">По 2 точкам</span>
-            </button>
-            <button id="btn-3point-align" class="btn-tool">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 9A7 7 0 0 1 18 6l2 1M4 17l2 1a7 7 0 0 0 11.9-3"/></svg><span data-i18n="alignThreePoints">По 3 точкам (Поворот)</span>
-            </button>
-            <button id="btn-4point-align" class="btn-tool">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6M4 4v6M20 4h-6m6 0v6M4 20v-6m0 6h6m10 0h-6m6 0v-6"/></svg><span data-i18n="alignFourPoints">По 4 точкам (Перспектива)</span>
-            </button>
-            <button id="btn-warp-align" class="btn-tool">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 6 14-2-1 15-14 1z"/><path d="m5 6 13 13M19 4 4 20"/></svg><span data-i18n="alignWarp">Деформация перспективы (4 точки)</span>
-            </button>
+        <div class="sidebar-content studio-tools-content">
+          <div class="studio-tool-group active" data-tool-group="auto" role="tabpanel">
+            <div class="studio-section-intro">
+              <strong data-i18n="studioAutoTitle">Автоматическое совмещение</strong>
+              <span data-i18n="studioAutoHint">Найдите совпадающие детали на двух кадрах</span>
+            </div>
+            <div class="sidebar-section">
+              <button id="btn-auto-opencv" class="btn-tool">
+                🧠 <span data-i18n="alignAutoOpenCV">Автовыравнивание AI (OpenCV)</span>
+              </button>
+              <button id="btn-auto-edge" class="btn-tool primary-tool">
+                🤖 <span data-i18n="alignAutoEdge">Найти контуры (Авто)</span>
+              </button>
+            </div>
           </div>
-
-          <div class="sidebar-section-title" data-i18n="sectionExtra">ДОПОЛНИТЕЛЬНО</div>
-          <div class="sidebar-section">
-            <button id="btn-match-sizes" class="btn-tool">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/><path d="M8 8h8v8H8z"/></svg><span data-i18n="matchSizes">Совместить размер</span>
-            </button>
-            <button id="btn-center" class="btn-tool">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 2v20M2 12h20"/></svg><span data-i18n="centerBoth">Центрировать</span>
-            </button>
+          <div class="studio-tool-group" data-tool-group="points" role="tabpanel" hidden>
+            <div class="studio-section-intro">
+              <strong data-i18n="studioPointsTitle">Ручное совмещение</strong>
+              <span data-i18n="studioPointsHint">Отметьте одинаковые ориентиры на A и B</span>
+            </div>
+            <div class="sidebar-section">
+              <button id="btn-1point-align" class="btn-tool">🎯 <span data-i18n="alignOnePoint">По 1 точке</span></button>
+              <button id="btn-2point-align" class="btn-tool">📍 <span data-i18n="alignTwoPoints">По 2 точкам</span></button>
+              <button id="btn-3point-align" class="btn-tool">🔄 <span data-i18n="alignThreePoints">По 3 точкам (Поворот)</span></button>
+              <button id="btn-4point-align" class="btn-tool">📐 <span data-i18n="alignFourPoints">По 4 точкам (Перспектива)</span></button>
+            </div>
+          </div>
+          <div class="studio-tool-group" data-tool-group="adjust" role="tabpanel" hidden>
+            <div class="studio-section-intro">
+              <strong data-i18n="studioAdjustTitle">Точная подгонка</strong>
+              <span data-i18n="studioAdjustHint">Приведите изображения к одному масштабу и центру</span>
+            </div>
+            <div class="sidebar-section">
+              <button id="btn-match-sizes" class="btn-tool">📐 <span data-i18n="matchSizes">Совместить размер</span></button>
+              <button id="btn-center" class="btn-tool">🎯 <span data-i18n="centerBoth">Центрировать</span></button>
+            </div>
           </div>
         </div>
 
         <div class="sidebar-footer">
           <button id="btn-reset-all" class="btn-reset">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 2.6-6.4L3 8"/><path d="M3 3v5h5"/></svg><span data-i18n="resetView">Сбросить все</span>
+            🔄 <span data-i18n="resetView">Сбросить все</span>
           </button>
         </div>
       </aside>
@@ -143,22 +209,32 @@
       <!-- Main Canvas Workspace -->
       <main class="workspace" id="workspace">
         <div id="viewer-container"></div>
-        <div id="workspace-empty-state" class="workspace-empty-state" aria-live="polite">
-          <div class="empty-state-mark" aria-hidden="true">
-            <svg viewBox="0 0 48 48"><rect x="7" y="9" width="34" height="30" rx="5"/><circle cx="18" cy="20" r="3"/><path d="m10 34 10-10 7 7 5-5 6 8"/></svg>
+
+        <section class="studio-welcome" id="studio-welcome" aria-labelledby="studio-welcome-title">
+          <div class="studio-welcome-orbit" aria-hidden="true">
+            <div class="studio-orbit orbit-one"></div><div class="studio-orbit orbit-two"></div>
+            <div class="studio-welcome-icon">
+              <svg viewBox="0 0 48 48" fill="none" aria-hidden="true"><rect x="5" y="8" width="27" height="31" rx="5" stroke="currentColor" stroke-width="2"/><rect x="16" y="4" width="27" height="31" rx="5" fill="#171d2b" stroke="currentColor" stroke-width="2"/><circle cx="25" cy="15" r="3" fill="currentColor"/><path d="m18 30 7-8 5 5 4-4 5 7H18Z" fill="currentColor" opacity=".75"/></svg>
+            </div>
           </div>
-          <div class="workspace-empty-title" data-i18n="noImageLoaded">Загрузите обе фотографии для начала сравнения</div>
-          <p data-i18n="dragDropHint">Перетащите фото сюда или кликните для выбора</p>
-        </div>
+          <span class="studio-eyebrow" data-i18n="studioWelcomeEyebrow">PHOTO REVIEW WORKSPACE</span>
+          <h2 id="studio-welcome-title" data-i18n="studioWelcomeTitle">Сравнивайте изображения точнее</h2>
+          <p id="studio-welcome-copy" data-i18n="studioWelcomeCopy">Добавьте два изображения, чтобы начать визуальный анализ различий</p>
+          <div class="studio-welcome-actions">
+            <label class="studio-welcome-slot slot-a" for="file-input-a" tabindex="0"><span class="studio-slot-letter">A</span><span><strong data-i18n="studioChooseA">Выбрать изображение A</strong><small data-i18n="studioChooseHint">PNG, JPG, WEBP и другие форматы</small></span><span class="studio-slot-plus">＋</span></label>
+            <label class="studio-welcome-slot slot-b" for="file-input-b" tabindex="0"><span class="studio-slot-letter">B</span><span><strong data-i18n="studioChooseB">Выбрать изображение B</strong><small data-i18n="studioChooseHint">PNG, JPG, WEBP и другие форматы</small></span><span class="studio-slot-plus">＋</span></label>
+          </div>
+          <div class="studio-welcome-footer"><span data-i18n="studioOr">или</span><button id="studio-load-demo" type="button" data-i18n="studioDemo">Открыть демонстрационную пару</button><span class="studio-welcome-shortcut" data-i18n="studioDropHint">Можно перетащить файлы прямо сюда</span></div>
+        </section>
 
         <!-- Dynamic Filename Badges -->
         <div id="filename-badge-a" class="filename-badge filename-badge-left hidden">
           <span class="badge-tag" data-i18n="photoALabel">Изображение A</span>
-          <span id="badge-name-a">2K.png • 1920×1080</span>
+          <span id="badge-name-a"></span>
         </div>
         <div id="filename-badge-b" class="filename-badge filename-badge-right hidden">
           <span class="badge-tag" data-i18n="photoBLabel">Изображение B</span>
-          <span id="badge-name-b">full.png • 1920×1080</span>
+          <span id="badge-name-b"></span>
         </div>
 
         <!-- Point Alignment Helper Banner -->
@@ -171,21 +247,23 @@
         <div class="floating-quick-bar" id="quick-actions-bar">
           <button id="btn-collapse-quick" class="quick-bar-toggle-btn" title="Свернуть панель быстрых действий">⌄</button>
           <div class="quick-bar-content">
-            <button id="btn-quick-show-both" class="btn-quick">
-              🖼️ <span data-i18n="showBoth">Показать обе</span>
-            </button>
             <button id="btn-swap" class="btn-quick">
               ⇄ <span data-i18n="swapPhotos">Поменять местами</span>
             </button>
-            <div id="btn-quick-sync-zoom" class="btn-quick active sync-indicator" role="status" aria-label="Масштаб синхронизирован">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.1 0l2.1-2.1a5 5 0 0 0-7.1-7.1l-1.2 1.2"/><path d="M14 11a5 5 0 0 0-7.1 0l-2.1 2.1a5 5 0 0 0 7.1 7.1l1.2-1.2"/></svg>
-              <span data-i18n="syncZoom">Синхронизировать зум</span>
-            </div>
-            <button id="btn-quick-fit" class="btn-quick">
-              ⛶ <span data-i18n="fitWindow">По размеру окна</span>
+            <button id="btn-quick-sync-zoom" class="btn-quick active" aria-pressed="true" data-i18n-title="syncZoomEnabled">
+              🔗 <span data-i18n="syncZoom">Синхронизировать зум</span>
             </button>
-            <button id="btn-quick-actual" class="btn-quick">
+            <button id="btn-quick-match" class="btn-quick" title="Совместить масштаб изображений">
+              ⛶ <span data-i18n="matchSizes">Совместить размер</span>
+            </button>
+            <button id="btn-quick-fit" class="btn-quick" title="Вписать изображения в рабочую область">
+              ⤢ <span data-i18n="fitWindow">По размеру окна</span>
+            </button>
+            <button id="btn-quick-actual" class="btn-quick" title="Показать в масштабе 1:1">
               1:1 <span data-i18n="actualSize">Фактический размер</span>
+            </button>
+            <button id="btn-quick-export" class="btn-quick" aria-haspopup="menu" aria-expanded="false">
+              ↧ <span data-i18n="btnExport">Экспортировать ∨</span>
             </button>
           </div>
         </div>
@@ -200,26 +278,39 @@
       <!-- Right Sidebar: Info & Metadata -->
       <aside class="sidebar sidebar-right" id="panel-right">
         <div class="sidebar-header">
-          <span class="sidebar-title" data-i18n="sidebarInfo">ИНФОРМАЦИЯ</span>
+          <div class="sidebar-heading-stack">
+            <span class="sidebar-title" data-i18n="sidebarInfo">ИНФОРМАЦИЯ</span>
+            <span class="sidebar-subtitle" data-i18n="studioInspectorSubtitle">Свойства и параметры</span>
+          </div>
           <button class="btn-panel-close" id="btn-close-right-inner" title="Свернуть">»</button>
         </div>
+        <nav class="studio-side-tabs inspector-tabs" id="studio-inspector-tabs" role="tablist" aria-label="Inspector sections">
+          <button class="studio-side-tab active" type="button" data-inspector-tab="files" role="tab" aria-selected="true" data-i18n="studioTabFiles">Файлы</button>
+          <button class="studio-side-tab" type="button" data-inspector-tab="compare" role="tab" aria-selected="false" data-i18n="studioTabCompare">Сравнение</button>
+          <button class="studio-side-tab" type="button" data-inspector-tab="details" role="tab" aria-selected="false" data-i18n="studioTabDetails">Детали</button>
+        </nav>
 
-        <div class="sidebar-content">
+        <div class="sidebar-content studio-inspector-content">
+          <div class="studio-inspector-group active" data-inspector-group="files" role="tabpanel">
           <!-- Card Image A -->
           <div class="info-card">
             <div class="info-card-header">
               <span class="info-card-title photo-a-color" data-i18n="photoALabel">Изображение A</span>
+              <button type="button" id="btn-clear-a" class="info-card-clear hidden" data-i18n-title="removeImageA" data-i18n-aria-label="removeImageA" title="Удалить изображение A" aria-label="Удалить изображение A">×</button>
             </div>
             <div class="info-card-body">
-              <img id="thumb-a" class="info-thumb" alt="Thumb A" src="" />
+              <div class="info-thumb-shell">
+                <img id="thumb-a" class="info-thumb" alt="" />
+                <div class="info-thumb-placeholder" aria-hidden="true">A</div>
+              </div>
               <div class="info-meta-group">
-                <div id="info-name-a" class="info-meta-filename">2K.png</div>
-                <div id="info-path-a" class="info-meta-path">C:\Images\2K.png</div>
+                <div id="info-name-a" class="info-meta-filename">Не загружено</div>
+                <div id="info-path-a" class="info-meta-path">Выберите изображение A</div>
                 <div class="info-meta-grid">
-                  <div><span class="meta-label" data-i18n="metaResolution">Разрешение:</span> <span id="info-res-a">1920 × 1080</span></div>
-                  <div><span class="meta-label" data-i18n="metaFormat">Формат:</span> <span id="info-fmt-a">PNG</span></div>
-                  <div><span class="meta-label" data-i18n="metaSize">Размер:</span> <span id="info-size-a">2.31 МБ</span></div>
-                  <div><span class="meta-label" data-i18n="metaDate">Дата:</span> <span id="info-date-a">25.07.2024</span></div>
+                  <div><span class="meta-label" data-i18n="metaResolution">Разрешение:</span> <span id="info-res-a">—</span></div>
+                  <div><span class="meta-label" data-i18n="metaFormat">Формат:</span> <span id="info-fmt-a">—</span></div>
+                  <div><span class="meta-label" data-i18n="metaSize">Размер:</span> <span id="info-size-a">—</span></div>
+                  <div><span class="meta-label" data-i18n="metaDate">Изменён:</span> <span id="info-date-a">—</span></div>
                 </div>
               </div>
             </div>
@@ -229,17 +320,21 @@
           <div class="info-card">
             <div class="info-card-header">
               <span class="info-card-title photo-b-color" data-i18n="photoBLabel">Изображение B</span>
+              <button type="button" id="btn-clear-b" class="info-card-clear hidden" data-i18n-title="removeImageB" data-i18n-aria-label="removeImageB" title="Удалить изображение B" aria-label="Удалить изображение B">×</button>
             </div>
             <div class="info-card-body">
-              <img id="thumb-b" class="info-thumb" alt="Thumb B" src="" />
+              <div class="info-thumb-shell">
+                <img id="thumb-b" class="info-thumb" alt="" />
+                <div class="info-thumb-placeholder" aria-hidden="true">B</div>
+              </div>
               <div class="info-meta-group">
-                <div id="info-name-b" class="info-meta-filename">full.png</div>
-                <div id="info-path-b" class="info-meta-path">C:\Images\full.png</div>
+                <div id="info-name-b" class="info-meta-filename">Не загружено</div>
+                <div id="info-path-b" class="info-meta-path">Выберите изображение B</div>
                 <div class="info-meta-grid">
-                  <div><span class="meta-label" data-i18n="metaResolution">Разрешение:</span> <span id="info-res-b">1920 × 1080</span></div>
-                  <div><span class="meta-label" data-i18n="metaFormat">Формат:</span> <span id="info-fmt-b">PNG</span></div>
-                  <div><span class="meta-label" data-i18n="metaSize">Размер:</span> <span id="info-size-b">2.89 МБ</span></div>
-                  <div><span class="meta-label" data-i18n="metaDate">Дата:</span> <span id="info-date-b">25.07.2024</span></div>
+                  <div><span class="meta-label" data-i18n="metaResolution">Разрешение:</span> <span id="info-res-b">—</span></div>
+                  <div><span class="meta-label" data-i18n="metaFormat">Формат:</span> <span id="info-fmt-b">—</span></div>
+                  <div><span class="meta-label" data-i18n="metaSize">Размер:</span> <span id="info-size-b">—</span></div>
+                  <div><span class="meta-label" data-i18n="metaDate">Изменён:</span> <span id="info-date-b">—</span></div>
                 </div>
               </div>
             </div>
@@ -263,6 +358,8 @@
             </div>
           </div>
 
+          </div>
+          <div class="studio-inspector-group" data-inspector-group="compare" role="tabpanel" hidden>
           <div class="accordion-item">
             <button class="accordion-trigger" data-target="acc-compare-settings">
               <span data-i18n="accCompareTitle">НАСТРОЙКИ СРАВНЕНИЯ</span>
@@ -272,7 +369,7 @@
               <div class="control-group">
                 <div class="slider-container">
                   <span class="tool-group-label" data-i18n="opacityLabel">Прозрачность A:</span>
-                  <input type="range" id="opacity-range" min="0" max="500" value="250" class="range-input" style="width: 140px;" />
+                  <input type="range" id="opacity-range" data-i18n-aria-label="opacityRangeLabel" aria-label="Непрозрачность изображения A" min="0" max="500" value="250" class="range-input" style="width: 140px;" />
                   <span id="opacity-val" class="val-badge">50%</span>
                 </div>
                 <div class="segmented-control mt-2">
@@ -285,13 +382,13 @@
               <div class="control-group mt-3">
                 <div class="slider-container" id="scale-a-container">
                   <span class="tool-group-label" data-i18n="scaleALabel">Размер A:</span>
-                  <input type="range" id="scale-a-range" min="50" max="250" value="100" class="range-input" style="width: 80px;" />
-                  <input type="number" id="scale-a-input" min="0.10" max="5.00" step="0.01" value="1.00" class="number-input" style="width: 55px;" />
+                  <input type="range" id="scale-a-range" data-i18n-aria-label="scaleARangeLabel" aria-label="Размер изображения A" min="10" max="1000" value="100" class="range-input" style="width: 80px;" />
+                  <input type="number" id="scale-a-input" data-i18n-aria-label="scaleANumberLabel" aria-label="Коэффициент размера изображения A" min="0.10" max="10.00" step="0.01" value="1.00" class="number-input" style="width: 55px;" />
                 </div>
                 <div class="slider-container" id="scale-b-container">
                   <span class="tool-group-label" data-i18n="scaleBLabel">Размер B:</span>
-                  <input type="range" id="scale-b-range" min="50" max="250" value="100" class="range-input" style="width: 80px;" />
-                  <input type="number" id="scale-b-input" min="0.10" max="5.00" step="0.01" value="1.00" class="number-input" style="width: 55px;" />
+                  <input type="range" id="scale-b-range" data-i18n-aria-label="scaleBRangeLabel" aria-label="Размер изображения B" min="10" max="1000" value="100" class="range-input" style="width: 80px;" />
+                  <input type="number" id="scale-b-input" data-i18n-aria-label="scaleBNumberLabel" aria-label="Коэффициент размера изображения B" min="0.10" max="10.00" step="0.01" value="1.00" class="number-input" style="width: 55px;" />
                 </div>
               </div>
             </div>
@@ -310,8 +407,8 @@
                 <div class="slider-container" style="display: flex; align-items: center; justify-content: space-between;">
                   <span class="tool-group-label" data-i18n="blinkInterval" style="font-size: 0.75rem;">Интервал (сек):</span>
                   <div style="display: flex; align-items: center; gap: 4px;">
-                    <input type="range" id="blink-speed-range" min="100" max="3000" step="100" value="1000" class="range-input" style="width: 75px;" />
-                    <input type="number" id="blink-speed-input" min="0.1" max="5.0" step="0.1" value="1.0" class="number-input" style="width: 50px; text-align: center;" />
+                    <input type="range" id="blink-speed-range" data-i18n-aria-label="blinkSpeedRangeLabel" aria-label="Интервал мигания" min="100" max="5000" step="100" value="1000" class="range-input" style="width: 75px;" />
+                    <input type="number" id="blink-speed-input" data-i18n-aria-label="blinkSpeedNumberLabel" aria-label="Интервал мигания в секундах" min="0.1" max="5.0" step="0.1" value="1.0" class="number-input" style="width: 50px; text-align: center;" />
                   </div>
                 </div>
               </div>
@@ -322,6 +419,8 @@
             </div>
           </div>
 
+          </div>
+          <div class="studio-inspector-group" data-inspector-group="details" role="tabpanel" hidden>
           <div class="accordion-item">
             <button class="accordion-trigger" data-target="acc-extra">
               <span data-i18n="accExtraTitle">ДОПОЛНИТЕЛЬНО (EXIF & КАНАЛЫ)</span>
@@ -330,17 +429,18 @@
             <div class="accordion-content hidden" id="acc-extra">
               <div class="sidebar-section-title" data-i18n="colorSpaceTitle" style="margin-top: 0;">ЦВЕТОВОЕ ПРОСТРАНСТВО</div>
               <div class="info-meta-grid">
-                <div><span class="meta-label" data-i18n="colorProfile">Цветовой профиль:</span> sRGB IEC61966-2.1</div>
-                <div><span class="meta-label" data-i18n="colorDepth">Глубина цвета:</span> 24 бит (8 бит/канал)</div>
-                <div><span class="meta-label" data-i18n="alphaChannel">Альфа-канал:</span> <span data-i18n="supported">Поддерживается</span></div>
+                <div><span class="meta-label" data-i18n="colorProfile">Цветовой профиль:</span> <span data-i18n="metadataUnavailable">Не определено браузером</span></div>
+                <div><span class="meta-label" data-i18n="colorDepth">Глубина цвета:</span> <span data-i18n="metadataUnavailable">Не определено браузером</span></div>
+                <div><span class="meta-label" data-i18n="alphaChannel">Альфа-канал:</span> <span data-i18n="metadataUnavailable">Не определено браузером</span></div>
               </div>
               <div class="sidebar-section-title" data-i18n="exifTitle" style="margin-top: 8px;">EXIF МЕТАДАННЫЕ</div>
               <div class="info-meta-grid">
-                <div><span class="meta-label" data-i18n="deviceLabel">Камера / Устройство:</span> <span data-i18n="stdImage">Стандартное изображение</span></div>
-                <div><span class="meta-label" data-i18n="dpiLabel">Плотность (DPI):</span> 96 × 96 DPI</div>
-                <div><span class="meta-label" data-i18n="compressionLabel">Сжатие:</span> <span data-i18n="lossless">Без потерь (Lossless)</span></div>
+                <div><span class="meta-label" data-i18n="deviceLabel">Камера / Устройство:</span> <span data-i18n="metadataUnavailable">Не определено браузером</span></div>
+                <div><span class="meta-label" data-i18n="dpiLabel">Плотность (DPI):</span> <span data-i18n="metadataUnavailable">Не определено браузером</span></div>
+                <div><span class="meta-label" data-i18n="compressionLabel">Сжатие:</span> <span data-i18n="metadataUnavailable">Не определено браузером</span></div>
               </div>
             </div>
+          </div>
           </div>
         </div>
       </aside>
@@ -350,6 +450,10 @@
     <footer class="bottom-upload-panel" id="panel-bottom">
       <button id="btn-collapse-bottom" class="bottom-panel-toggle-btn" title="Свернуть нижнюю панель">⌄</button>
       
+      <div class="bottom-panel-heading">
+        <div><strong data-i18n="studioFilesHeading">Рабочие изображения</strong><span data-i18n="studioFilesSubheading">Перетащите файлы или выберите их вручную</span></div>
+        <span class="studio-upload-key" data-i18n="studioUploadHint">Два файла · один проект</span>
+      </div>
       <div class="bottom-panel-content">
         <!-- Upload Box A -->
         <label class="upload-dropzone-box" id="dropzone-a" for="file-input-a">
@@ -362,7 +466,7 @@
           </div>
           <img id="preview-a" class="dropzone-preview hidden" alt="Preview A" />
         </label>
-        <input type="file" id="file-input-a" accept="image/*,.png,.jpg,.jpeg,.webp,.gif,.bmp,.svg,.ico,.tiff,.heic,.avif" style="display:none" />
+        <input type="file" id="file-input-a" accept="image/*,.png,.jpg,.jpeg,.webp,.gif,.bmp,.svg,.ico,.avif" style="display:none" />
 
         <!-- Swap Icon -->
         <button id="btn-swap-bottom" class="btn-swap-round" title="Поменять местами A и B">⇄</button>
@@ -378,10 +482,10 @@
           </div>
           <img id="preview-b" class="dropzone-preview hidden" alt="Preview B" />
         </label>
-        <input type="file" id="file-input-b" accept="image/*,.png,.jpg,.jpeg,.webp,.gif,.bmp,.svg,.ico,.tiff,.heic,.avif" style="display:none" />
+        <input type="file" id="file-input-b" accept="image/*,.png,.jpg,.jpeg,.webp,.gif,.bmp,.svg,.ico,.avif" style="display:none" />
 
         <!-- Hidden Input for Pair Selection -->
-        <input type="file" id="file-input-pair" accept="image/*,.png,.jpg,.jpeg,.webp,.gif,.bmp,.svg,.ico,.tiff,.heic,.avif" multiple style="display:none" />
+        <input type="file" id="file-input-pair" accept="image/*,.png,.jpg,.jpeg,.webp,.gif,.bmp,.svg,.ico,.avif" multiple style="display:none" />
 
         <!-- Single Button for Pair Folder -->
         <label id="btn-open-pair" class="btn-bottom-action" for="file-input-pair" style="cursor:pointer;" title="Выберите сразу 2 файла в папке">
@@ -389,10 +493,7 @@
         </label>
 
         <!-- Primary Action Buttons -->
-        <button id="btn-compare-action" class="btn-bottom-action primary-action">
-          📊 <span data-i18n="btnCompare">Сравнить</span>
-        </button>
-        <button id="btn-export-action" class="btn-bottom-action primary-action">
+        <button id="btn-export-action" class="btn-bottom-action primary-action" aria-haspopup="menu" aria-expanded="false">
           📥 <span data-i18n="btnExport">Экспортировать ∨</span>
         </button>
       </div>
@@ -419,5 +520,6 @@
   </div>
 
   <script type="module" src="./src/app.js"></script>
+  <script type="module" src="./src/studio.js"></script>
 </body>
 </html>

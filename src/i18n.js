@@ -1,6 +1,46 @@
-const translations = {
+export const translations = {
   ru: {
     appTitle: "PhotoCheck — Визуальное сравнение фото",
+    studioWorkspace: "РАБОЧЕЕ МЕСТО",
+    studioCompare: "СРАВНЕНИЕ",
+    studioLayoutStandard: "Обычное",
+    studioLayoutFocus: "Фокус",
+    studioLayoutInspect: "Детально",
+    studioPresetCurtain: "Шторка",
+    studioPresetOverlay: "Наложение",
+    studioPresetSplit: "Рядом",
+    studioPresetDifference: "Разница",
+    studioPresetBlink: "Мигание",
+    studioStatusWaiting: "Ожидание изображений",
+    studioStatusOne: "Добавьте второе изображение",
+    studioStatusReady: "Пара готова к сравнению",
+    studioToolsSubtitle: "Инструменты совмещения",
+    studioInspectorSubtitle: "Свойства и параметры",
+    studioTabAuto: "Авто",
+    studioTabPoints: "Точки",
+    studioTabAdjust: "Коррекция",
+    studioTabFiles: "Файлы",
+    studioTabCompare: "Сравнение",
+    studioTabDetails: "Детали",
+    studioAutoTitle: "Автоматическое совмещение",
+    studioAutoHint: "Найдите совпадающие детали на двух кадрах",
+    studioPointsTitle: "Ручное совмещение",
+    studioPointsHint: "Отметьте одинаковые ориентиры на A и B",
+    studioAdjustTitle: "Точная подгонка",
+    studioAdjustHint: "Приведите изображения к одному масштабу и центру",
+    studioWelcomeEyebrow: "PHOTO REVIEW WORKSPACE",
+    studioWelcomeTitle: "Сравнивайте изображения точнее",
+    studioWelcomeCopy: "Добавьте два изображения, чтобы начать визуальный анализ различий",
+    studioChooseA: "Выбрать изображение A",
+    studioChooseB: "Выбрать изображение B",
+    studioChooseHint: "PNG, JPG, WEBP и другие форматы",
+    studioOr: "или",
+    studioDemo: "Открыть демонстрационную пару",
+    studioDropHint: "Можно перетащить файлы прямо сюда",
+    studioFilesHeading: "Рабочие изображения",
+    studioFilesSubheading: "Перетащите файлы или выберите их вручную",
+    studioUploadHint: "Два файла · один проект",
+
     loadSectionTitle: "Загрузка изображений",
     photoALabel: "Изображение A",
     photoBLabel: "Изображение B",
@@ -17,13 +57,21 @@ const translations = {
     accExtraTitle: "ДОПОЛНИТЕЛЬНО (EXIF & КАНАЛЫ)",
     colorSpaceTitle: "ЦВЕТОВОЕ ПРОСТРАНСТВО",
     exifTitle: "EXIF МЕТАДАННЫЕ",
-    similarityScoreLabel: "Сходство кадров:",
+    similarityScoreLabel: "Уверенность совмещения:",
 
     // Metadata Labels
     metaResolution: "Разрешение:",
     metaFormat: "Формат:",
     metaSize: "Размер:",
-    metaDate: "Дата:",
+    metaDate: "Изменён:",
+    imageLoading: "Загрузка изображения…",
+    imageDecodeError: "Не удалось открыть файл. Проверьте формат изображения.",
+    imageRemoved: "Изображение удалено",
+    removeImageA: "Удалить изображение A",
+    removeImageB: "Удалить изображение B",
+    syncZoomEnabled: "Синхронизация масштаба включена",
+    syncZoomDisabled: "Независимый масштаб для выбранного изображения",
+    metadataUnavailable: "Не определено браузером",
     colorProfile: "Цветовой профиль:",
     colorDepth: "Глубина цвета:",
     alphaChannel: "Альфа-канал:",
@@ -60,11 +108,11 @@ const translations = {
     alignB: "Подгонка B",
     alignOnePoint: "По 1 точке",
     alignTwoPoints: "По 2 точкам",
-    alignThreePoints: "По 3 точкам (Поворот)",
+    alignThreePoints: "По 3 точкам (Аффинное)",
     alignFourPoints: "По 4 точкам (Перспектива)",
     alignWarp: "Деформация перспективы (4 точки)",
     alignAutoEdge: "Найти контуры (Авто)",
-    alignAutoOpenCV: "Автовыравнивание AI (OpenCV)",
+    alignAutoOpenCV: "Автовыравнивание OpenCV",
     alignTwoPointsHint: "Кликните 2 точки на фото A, затем 2 такие же точки на фото B для авто-совмещения",
     alignPointA1: "Кликните Точку 1 на фото A",
     alignPointA2: "Кликните Точку 2 на фото A",
@@ -83,6 +131,14 @@ const translations = {
 
     // Navigation & Zoom
     zoomLabel: "Масштаб:",
+    zoomRangeLabel: "Масштаб просмотра",
+    opacityRangeLabel: "Непрозрачность изображения A",
+    scaleARangeLabel: "Размер изображения A",
+    scaleANumberLabel: "Коэффициент размера изображения A",
+    scaleBRangeLabel: "Размер изображения B",
+    scaleBNumberLabel: "Коэффициент размера изображения B",
+    blinkSpeedRangeLabel: "Интервал мигания",
+    blinkSpeedNumberLabel: "Интервал мигания в секундах",
     fitWindow: "По размеру окна",
     actualSize: "Фактический размер",
     showBoth: "Показать обе",
@@ -93,17 +149,14 @@ const translations = {
     
     // Actions & Bottom Panel
     centerBoth: "Центрировать",
-    resetView: "Сбросить все",
+    resetView: "Сбросить совмещение",
     swapPhotos: "Поменять местами",
     uploadA: "Загрузить изображение A",
     uploadB: "Загрузить изображение B",
     dragOrClick: "или перетащите файл сюда",
     openPair: "Открыть пару файлов",
     btnCompare: "Сравнить",
-    btnExport: "Скачать PNG",
-    compareReady: "Режим сравнения готов",
-    exportReady: "Снимок сравнения сохранён в PNG",
-    exportError: "Не удалось создать PNG-файл",
+    btnExport: "Экспортировать ∨",
     cancel: "Отмена",
 
     // Manual alignment
@@ -114,6 +167,13 @@ const translations = {
     // Statuses & Errors
     noImageLoaded: "Загрузите обе фотографии для начала сравнения",
     imagesLoaded: "Изображения загружены и отцентрированы",
+    autoAlignNotFound: "Совпадений недостаточно. Попробуйте другой режим или ручное совмещение.",
+    needPair: "Сначала загрузите изображения A и B.",
+    analyzingEdges: "Анализ контуров изображений…",
+    loadingOpenCV: "Загрузка движка OpenCV…",
+    openCVAlignmentDone: "Автовыравнивание OpenCV выполнено.",
+    invalidPointSet: "Точки расположены некорректно. Выберите другие ориентиры.",
+    viewReset: "Вид и параметры сравнения сброшены.",
     invalidFile: "Пожалуйста, выберите файл изображения (JPG, PNG, WEBP и др.)",
     
     // Quick Help
@@ -125,6 +185,46 @@ const translations = {
   },
   en: {
     appTitle: "PhotoCheck — Visual Photo Comparison",
+    studioWorkspace: "WORKSPACE",
+    studioCompare: "COMPARE",
+    studioLayoutStandard: "Standard",
+    studioLayoutFocus: "Focus",
+    studioLayoutInspect: "Inspect",
+    studioPresetCurtain: "Curtain",
+    studioPresetOverlay: "Overlay",
+    studioPresetSplit: "Side by side",
+    studioPresetDifference: "Difference",
+    studioPresetBlink: "Blink",
+    studioStatusWaiting: "Waiting for images",
+    studioStatusOne: "Add the second image",
+    studioStatusReady: "Pair ready to compare",
+    studioToolsSubtitle: "Alignment tools",
+    studioInspectorSubtitle: "Properties and settings",
+    studioTabAuto: "Auto",
+    studioTabPoints: "Points",
+    studioTabAdjust: "Adjust",
+    studioTabFiles: "Files",
+    studioTabCompare: "Compare",
+    studioTabDetails: "Details",
+    studioAutoTitle: "Automatic alignment",
+    studioAutoHint: "Find matching details in both frames",
+    studioPointsTitle: "Manual alignment",
+    studioPointsHint: "Mark matching reference points on A and B",
+    studioAdjustTitle: "Fine adjustment",
+    studioAdjustHint: "Match image scale and center position",
+    studioWelcomeEyebrow: "PHOTO REVIEW WORKSPACE",
+    studioWelcomeTitle: "Compare images with precision",
+    studioWelcomeCopy: "Add two images to begin a visual difference analysis",
+    studioChooseA: "Choose image A",
+    studioChooseB: "Choose image B",
+    studioChooseHint: "PNG, JPG, WEBP and other formats",
+    studioOr: "or",
+    studioDemo: "Open demo pair",
+    studioDropHint: "You can also drop files right here",
+    studioFilesHeading: "Working images",
+    studioFilesSubheading: "Drop files or choose them manually",
+    studioUploadHint: "Two files · one project",
+
     loadSectionTitle: "Image Upload",
     photoALabel: "Image A",
     photoBLabel: "Image B",
@@ -141,13 +241,21 @@ const translations = {
     accExtraTitle: "EXTRA (EXIF & CHANNELS)",
     colorSpaceTitle: "COLOR SPACE",
     exifTitle: "EXIF METADATA",
-    similarityScoreLabel: "Similarity Score:",
+    similarityScoreLabel: "Alignment confidence:",
 
     // Metadata Labels
     metaResolution: "Resolution:",
     metaFormat: "Format:",
     metaSize: "Size:",
-    metaDate: "Date:",
+    metaDate: "Modified:",
+    imageLoading: "Loading image…",
+    imageDecodeError: "Could not open this file. Check the image format.",
+    imageRemoved: "Image removed",
+    removeImageA: "Remove image A",
+    removeImageB: "Remove image B",
+    syncZoomEnabled: "Synchronized zoom enabled",
+    syncZoomDisabled: "Independent zoom for the selected image",
+    metadataUnavailable: "Not detected by the browser",
     colorProfile: "Color Profile:",
     colorDepth: "Color Depth:",
     alphaChannel: "Alpha Channel:",
@@ -184,11 +292,11 @@ const translations = {
     alignB: "Align B",
     alignOnePoint: "By 1 Point",
     alignTwoPoints: "By 2 Points",
-    alignThreePoints: "By 3 Points (Rotate)",
+    alignThreePoints: "By 3 Points (Affine)",
     alignFourPoints: "By 4 Points (Perspective)",
     alignWarp: "Perspective Warp (4 points)",
     alignAutoEdge: "Auto Edge Match",
-    alignAutoOpenCV: "AI Auto-Align (OpenCV)",
+    alignAutoOpenCV: "OpenCV auto alignment",
     alignTwoPointsHint: "Click 2 reference points on Photo A, then 2 matching points on Photo B to auto-fit",
     alignPointA1: "Click Point 1 on Photo A",
     alignPointA2: "Click Point 2 on Photo A",
@@ -207,6 +315,14 @@ const translations = {
 
     // Navigation & Zoom
     zoomLabel: "Zoom:",
+    zoomRangeLabel: "Viewer zoom",
+    opacityRangeLabel: "Image A opacity",
+    scaleARangeLabel: "Image A size",
+    scaleANumberLabel: "Image A scale factor",
+    scaleBRangeLabel: "Image B size",
+    scaleBNumberLabel: "Image B scale factor",
+    blinkSpeedRangeLabel: "Blink interval",
+    blinkSpeedNumberLabel: "Blink interval in seconds",
     fitWindow: "Fit to Window",
     actualSize: "Actual Size (1:1)",
     showBoth: "Show Both",
@@ -217,17 +333,14 @@ const translations = {
     
     // Actions & Bottom Panel
     centerBoth: "Center Both",
-    resetView: "Reset All",
+    resetView: "Reset Alignment",
     swapPhotos: "Swap Photos",
     uploadA: "Upload Image A",
     uploadB: "Upload Image B",
     dragOrClick: "or drag & drop file here",
     openPair: "Open Pair of Files",
     btnCompare: "Compare",
-    btnExport: "Export PNG",
-    compareReady: "Comparison view is ready",
-    exportReady: "Comparison snapshot saved as PNG",
-    exportError: "Could not create the PNG file",
+    btnExport: "Export ∨",
     cancel: "Cancel",
 
     // Manual alignment
@@ -238,6 +351,13 @@ const translations = {
     // Statuses & Errors
     noImageLoaded: "Load both photos to start comparison",
     imagesLoaded: "Images loaded and centered",
+    autoAlignNotFound: "Not enough matching details. Try another mode or manual alignment.",
+    needPair: "Load image A and image B first.",
+    analyzingEdges: "Analyzing image edges…",
+    loadingOpenCV: "Loading the OpenCV engine…",
+    openCVAlignmentDone: "OpenCV automatic alignment completed.",
+    invalidPointSet: "The selected points are invalid. Choose different reference points.",
+    viewReset: "View and comparison settings have been reset.",
     invalidFile: "Please select an image file (JPG, PNG, WEBP, etc.)",
     
     // Quick Help
@@ -251,7 +371,12 @@ const translations = {
 
 class I18nManager {
   constructor() {
-    this.currentLang = localStorage.getItem("photocheck_lang") || "ru";
+    try {
+      const saved = localStorage.getItem("photocheck_lang");
+      this.currentLang = translations[saved] ? saved : "ru";
+    } catch {
+      this.currentLang = "ru";
+    }
   }
 
   get lang() {
@@ -261,7 +386,7 @@ class I18nManager {
   setLanguage(lang) {
     if (translations[lang]) {
       this.currentLang = lang;
-      localStorage.setItem("photocheck_lang", lang);
+      try { localStorage.setItem("photocheck_lang", lang); } catch { /* Storage may be disabled. */ }
       this.updateUI();
       document.dispatchEvent(new CustomEvent("languageChanged", { detail: { lang } }));
     }
@@ -273,19 +398,23 @@ class I18nManager {
   }
 
   updateUI() {
+    document.documentElement.lang = this.currentLang;
     document.querySelectorAll("[data-i18n]").forEach(el => {
       const key = el.getAttribute("data-i18n");
       const text = this.t(key);
-      if (el.tagName === "INPUT" && el.type === "placeholder") {
-        el.placeholder = text;
+      if (el.hasAttribute("data-i18n-placeholder")) {
+        el.setAttribute("placeholder", text);
       } else {
-        el.innerText = text;
+        el.textContent = text;
       }
     });
 
     document.querySelectorAll("[data-i18n-title]").forEach(el => {
       const key = el.getAttribute("data-i18n-title");
       el.title = this.t(key);
+    });
+    document.querySelectorAll("[data-i18n-aria-label]").forEach(el => {
+      el.setAttribute("aria-label", this.t(el.getAttribute("data-i18n-aria-label")));
     });
 
     // Update active state in lang buttons and dropdown badge

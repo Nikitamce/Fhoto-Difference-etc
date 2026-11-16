@@ -11,7 +11,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // --- 1. DOM Elements & State Variables ---
   const container = document.getElementById("viewer-container");
   const workspace = document.getElementById("workspace");
-  const workspaceEmptyState = document.getElementById("workspace-empty-state");
+  const getViewportRect = () => container?.getBoundingClientRect() || workspace?.getBoundingClientRect();
 
   // State for loaded images
   let imageASrc = null;
@@ -20,6 +20,9 @@ document.addEventListener("DOMContentLoaded", () => {
   let imgBObj = null;
   let fileObjA = null;
   let fileObjB = null;
+  let objectUrlA = null;
+  let objectUrlB = null;
+  const loadRevision = { A: 0, B: 0 };
 
   // Zoom & Scale UI elements
   const zoomRange = document.getElementById("zoom-range");
@@ -87,6 +90,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnCancelPoint = document.getElementById("btn-cancel-2point");
 
   let activePointsMode = 0; // 0=off, 1=1pt, 2=2pt, 3=3pt, 4=4pt
+  let alignmentJobRevision = 0; // Invalidates auto-align results when sources or user intent change.
   let pointsA = [];
   let pointsB = [];
   let currentActiveAlignBtn = null;
@@ -113,22 +117,153 @@ document.addEventListener("DOMContentLoaded", () => {
     return /\.(jpe?g|png|gif|webp|svg|bmp|ico|tiff?|avif|heic|jfif)$/i.test(file.name || "");
   }
 
-  function loadSingleFile(file, callback) {
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      const src = evt.target.result;
+  function decodeImageFile(file) {
+    return new Promise((resolve, reject) => {
+      if (!file || !isImageFile(file)) {
+        reject(new Error(i18n.t("invalidFile")));
+        return;
+      }
+
+      const src = URL.createObjectURL(file);
       const img = new Image();
-      img.onload = () => callback(src, img, file);
+      img.decoding = "async";
+      img.onload = () => resolve({ src, img, file });
+      img.onerror = () => {
+        URL.revokeObjectURL(src);
+        reject(new Error(i18n.t("imageDecodeError")));
+      };
       img.src = src;
-    };
-    reader.readAsDataURL(file);
+    });
+  }
+
+  function getFitDimensions() {
+    const rect = getViewportRect();
+    if (!rect) return { width: 800, height: 600 };
+    if (modesCtrl?.currentMode === "split") {
+      const paneRect = document.getElementById("split-pane-a")?.getBoundingClientRect();
+      return { width: paneRect?.width || Math.max(1, (rect.width - 2) / 2), height: paneRect?.height || rect.height };
+    }
+    return { width: rect.width, height: rect.height };
+  }
+
+  function getZoomRect(clientX = null) {
+    const rect = getViewportRect();
+    if (!rect) return null;
+    if (modesCtrl?.currentMode !== "split") return rect;
+    const paneA = document.getElementById("split-pane-a")?.getBoundingClientRect();
+    const paneB = document.getElementById("split-pane-b")?.getBoundingClientRect();
+    if (!paneA || !paneB) return rect;
+    const useRightPane = clientX !== null && clientX >= paneB.left;
+    const pane = useRightPane ? paneB : paneA;
+    return { left: pane.left, top: pane.top, width: pane.width, height: pane.height, right: pane.right, bottom: pane.bottom };
+  }
+
+  function zoomAt(scale, clientX = null, clientY = null) {
+    const rect = getZoomRect(clientX);
+    if (!rect || !viewer) return;
+    const x = clientX === null ? rect.left + rect.width / 2 : clientX;
+    const y = clientY === null ? rect.top + rect.height / 2 : clientY;
+    viewer.setZoom(scale, x, y, rect);
+  }
+
+  function updatePreview(slot, src) {
+    const preview = document.getElementById(slot === "A" ? "preview-a" : "preview-b");
+    if (!preview) return;
+    if (src) {
+      preview.src = src;
+      preview.classList.remove("hidden");
+    } else {
+      preview.removeAttribute("src");
+      preview.classList.add("hidden");
+    }
   }
 
   function updateZoomUI() {
-    if (!zoomRange || !zoomVal || !viewer) return;
-    const scalePercent = Math.round(viewer.scale * 100);
-    zoomRange.value = scalePercent;
-    zoomVal.textContent = `${scalePercent}%`;
+    if (!viewer) return;
+    const scalePercent = Math.round(viewer.getEffectiveZoom() * 100);
+    if (zoomRange) zoomRange.value = String(Math.max(Number(zoomRange.min || 10), Math.min(Number(zoomRange.max || 1000), scalePercent)));
+    if (zoomVal) zoomVal.textContent = `${scalePercent}%`;
+    const syncButton = document.getElementById("btn-quick-sync-zoom");
+    if (syncButton) {
+      syncButton.classList.toggle("active", viewer.syncZoom);
+      syncButton.setAttribute("aria-pressed", String(viewer.syncZoom));
+      syncButton.title = viewer.syncZoom ? i18n.t("syncZoomEnabled") : i18n.t("syncZoomDisabled");
+    }
+  }
+
+  function commitImageRecords(nextA, nextB) {
+    alignmentJobRevision++;
+    const previousUrls = [objectUrlA, objectUrlB];
+    imageASrc = nextA?.src || null;
+    imageBSrc = nextB?.src || null;
+    imgAObj = nextA?.img || null;
+    imgBObj = nextB?.img || null;
+    fileObjA = nextA?.file || null;
+    fileObjB = nextB?.file || null;
+    objectUrlA = imageASrc;
+    objectUrlB = imageBSrc;
+    filenameA = nextA?.file?.name || "Изображение A";
+    filenameB = nextB?.file?.name || "Изображение B";
+
+    updatePreview("A", imageASrc);
+    updatePreview("B", imageBSrc);
+    checkBothImagesLoaded();
+    updateRightSidebarInfo();
+    updateFilenameBadges();
+
+    previousUrls.forEach((url) => {
+      if (url && url !== objectUrlA && url !== objectUrlB) URL.revokeObjectURL(url);
+    });
+  }
+
+  async function loadImageIntoSlot(slot, file) {
+    if (!isImageFile(file)) {
+      updateStatusHint(i18n.t("invalidFile"), false);
+      return false;
+    }
+    const revision = ++loadRevision[slot];
+    updateStatusHint(i18n.t("imageLoading"), true);
+    let record;
+    try {
+      record = await decodeImageFile(file);
+      if (revision !== loadRevision[slot]) {
+        URL.revokeObjectURL(record.src);
+        return false;
+      }
+      commitImageRecords(
+        slot === "A" ? record : (imageASrc ? { src: imageASrc, img: imgAObj, file: fileObjA } : null),
+        slot === "B" ? record : (imageBSrc ? { src: imageBSrc, img: imgBObj, file: fileObjB } : null)
+      );
+      return true;
+    } catch (error) {
+      if (revision === loadRevision[slot]) updateStatusHint(error.message || i18n.t("imageDecodeError"), false);
+      return false;
+    }
+  }
+
+  async function loadImagePair(fileA, fileB) {
+    if (!isImageFile(fileA) || !isImageFile(fileB)) {
+      updateStatusHint(i18n.t("invalidFile"), false);
+      return false;
+    }
+    const revisionA = ++loadRevision.A;
+    const revisionB = ++loadRevision.B;
+    updateStatusHint(i18n.t("imageLoading"), true);
+    const results = await Promise.allSettled([decodeImageFile(fileA), decodeImageFile(fileB)]);
+    const loaded = results.filter(result => result.status === "fulfilled").map(result => result.value);
+    if (results.some(result => result.status === "rejected")) {
+      loaded.forEach(record => URL.revokeObjectURL(record.src));
+      if (revisionA === loadRevision.A && revisionB === loadRevision.B) {
+        updateStatusHint(results.find(result => result.status === "rejected").reason?.message || i18n.t("imageDecodeError"), false);
+      }
+      return false;
+    }
+    if (revisionA !== loadRevision.A || revisionB !== loadRevision.B) {
+      loaded.forEach(record => URL.revokeObjectURL(record.src));
+      return false;
+    }
+    commitImageRecords(loaded[0], loaded[1]);
+    return true;
   }
 
   function updateScaleAUI() {
@@ -190,10 +325,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function triggerCanvasResize() {
     setTimeout(() => {
-      if (workspace && imgAObj && viewer) {
-        const rect = workspace.getBoundingClientRect();
-        viewer.onStateChange();
-      }
+      if (workspace && (imgAObj || imgBObj) && viewer) viewer.onStateChange();
     }, 230);
   }
 
@@ -351,6 +483,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function startPointMode(count, btnElement) {
     cancelPointMode();
+    alignmentJobRevision++;
+    // Keep the current alignment visible; viewer.screenToImageB inverses any affine/projective transform.
     activePointsMode = count;
     pointsA = [];
     pointsB = [];
@@ -420,29 +554,26 @@ document.addEventListener("DOMContentLoaded", () => {
     toast.id = "status-toast";
     toast.style.cssText = `
       position: fixed;
-      top: 76px;
+      top: 56px;
       left: 50%;
       transform: translateX(-50%);
-      background: rgba(14, 22, 37, 0.94);
-      backdrop-filter: blur(16px);
-      color: #f3f6fc;
-      padding: 8px 15px;
-      min-height: 34px;
-      max-width: min(560px, calc(100vw - 32px));
-      border-radius: 12px;
-      font-size: 0.77rem;
-      font-weight: 550;
-      border: 1px solid rgba(155, 140, 255, 0.38);
-      box-shadow: 0 12px 34px rgba(0, 0, 0, 0.34);
+      background: rgba(17, 24, 39, 0.92);
+      backdrop-filter: blur(10px);
+      color: #f8fafc;
+      padding: 4px 14px;
+      height: 28px;
+      border-radius: 14px;
+      font-size: 0.76rem;
+      font-weight: 500;
+      border: 1px solid rgba(99, 102, 241, 0.5);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
       z-index: 9999;
       white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
       pointer-events: none;
       transition: opacity 0.3s ease;
       display: flex;
       align-items: center;
-      gap: 9px;
+      gap: 8px;
     `;
 
     if (isLoading) {
@@ -451,8 +582,8 @@ document.addEventListener("DOMContentLoaded", () => {
         display: inline-block;
         width: 10px;
         height: 10px;
-        border: 2px solid rgba(155,140,255,0.24);
-        border-top-color: #9b8cff;
+        border: 2px solid rgba(99,102,241,0.3);
+        border-top-color: #6366f1;
         border-radius: 50%;
         animation: spin 0.7s linear infinite;
       `;
@@ -477,347 +608,203 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  function drawProjectiveTriangle(ctx, image, source, destination) {
-    const [s0, s1, s2] = source;
-    const [d0, d1, d2] = destination;
-    const sx1 = s1.x - s0.x, sy1 = s1.y - s0.y;
-    const sx2 = s2.x - s0.x, sy2 = s2.y - s0.y;
-    const determinant = sx1 * sy2 - sx2 * sy1;
-    if (Math.abs(determinant) < 1e-8) return;
-
-    const dx1 = d1.x - d0.x, dx2 = d2.x - d0.x;
-    const dy1 = d1.y - d0.y, dy2 = d2.y - d0.y;
-    const a = (dx1 * sy2 - dx2 * sy1) / determinant;
-    const c = (dx2 * sx1 - dx1 * sx2) / determinant;
-    const b = (dy1 * sy2 - dy2 * sy1) / determinant;
-    const d = (dy2 * sx1 - dy1 * sx2) / determinant;
-    const e = d0.x - a * s0.x - c * s0.y;
-    const f = d0.y - b * s0.x - d * s0.y;
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(d0.x, d0.y);
-    ctx.lineTo(d1.x, d1.y);
-    ctx.lineTo(d2.x, d2.y);
-    ctx.closePath();
-    ctx.clip();
-    ctx.transform(a, b, c, d, e, f);
-    ctx.drawImage(image, 0, 0);
-    ctx.restore();
-  }
-
-  function drawTransformedImage(ctx, image, transform) {
-    if (!image || !transform || !image.naturalWidth) return;
-
-    ctx.save();
-    if (!transform.matrix) {
-      ctx.translate(transform.x, transform.y);
-      ctx.scale(transform.scale, transform.scale);
-      ctx.drawImage(image, 0, 0);
-      ctx.restore();
-      return;
-    }
-
-    const matrix3dMatch = transform.matrix.match(/^matrix3d\((.+)\)$/);
-    if (matrix3dMatch) {
-      const matrix = matrix3dMatch[1].split(",").map(Number);
-      if (matrix.length !== 16 || matrix.some(value => !Number.isFinite(value))) {
-        ctx.restore();
-        throw new Error("Unsupported perspective transform");
-      }
-
-      const project = (x, y) => {
-        const w = matrix[3] * x + matrix[7] * y + matrix[15];
-        if (Math.abs(w) < 1e-8) return null;
-        return {
-          x: transform.x + transform.scale * (matrix[0] * x + matrix[4] * y + matrix[12]) / w,
-          y: transform.y + transform.scale * (matrix[1] * x + matrix[5] * y + matrix[13]) / w
-        };
-      };
-
-      const columns = 14, rows = 14;
-      const point = (column, row) => ({
-        x: image.naturalWidth * column / columns,
-        y: image.naturalHeight * row / rows
-      });
-
-      for (let row = 0; row < rows; row++) {
-        for (let column = 0; column < columns; column++) {
-          const x0 = point(column, row);
-          const x1 = point(column + 1, row);
-          const x2 = point(column + 1, row + 1);
-          const x3 = point(column, row + 1);
-
-          const p0 = project(x0.x, x0.y);
-          const p1 = project(x1.x, x1.y);
-          const p2 = project(x2.x, x2.y);
-          const p3 = project(x3.x, x3.y);
-
-          if (p0 && p1 && p2) drawProjectiveTriangle(ctx, image, [x0, x1, x2], [p0, p1, p2]);
-          if (p0 && p2 && p3) drawProjectiveTriangle(ctx, image, [x0, x2, x3], [p0, p2, p3]);
-        }
-      }
-      ctx.restore();
-      return;
-    }
-
-    const matrixMatch = transform.matrix.match(/^matrix\((.+)\)$/);
-    if (matrixMatch) {
-      const values = matrixMatch[1].split(",").map(Number);
-      if (values.length !== 6 || values.some(value => !Number.isFinite(value))) {
-        ctx.restore();
-        throw new Error("Unsupported affine transform");
-      }
-      ctx.translate(transform.x, transform.y);
-      ctx.scale(transform.scale, transform.scale);
-      ctx.transform(...values);
-      ctx.drawImage(image, 0, 0);
-      ctx.restore();
-      return;
-    }
-
-    ctx.restore();
-    throw new Error("Unknown image transform");
-  }
-
-  function drawComparisonSnapshot(ctx, width, height) {
-    const transformA = viewer.getTransformA();
-    const transformB = viewer.getTransformB();
-    const drawA = () => drawTransformedImage(ctx, imgAObj, transformA);
-    const drawB = (offsetX = 0) => drawTransformedImage(ctx, imgBObj, {
-      ...transformB,
-      x: transformB.x + offsetX
-    });
-
-    ctx.fillStyle = "#080d17";
-    ctx.fillRect(0, 0, width, height);
-
-    if (modesCtrl.currentMode === "split") {
-      const divider = width / 2;
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(0, 0, divider, height);
-      ctx.clip();
-      drawA();
-      ctx.restore();
-
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(divider, 0, width - divider, height);
-      ctx.clip();
-      drawB(divider);
-      ctx.restore();
-      return;
-    }
-
-    drawB();
-
-    if (isDiffOverlay) {
-      ctx.save();
-      ctx.globalCompositeOperation = "difference";
-      if ("filter" in ctx) ctx.filter = "contrast(300%) brightness(180%)";
-      drawA();
-      ctx.restore();
-      return;
-    }
-
-    if (modesCtrl.currentMode === "fade") {
-      ctx.save();
-      ctx.globalAlpha = modesCtrl.opacity;
-      drawA();
-      ctx.restore();
-      return;
-    }
-
-    ctx.save();
-    if (modesCtrl.sliderOrientation === "vertical") {
-      ctx.beginPath();
-      ctx.rect(0, 0, width * modesCtrl.sliderPos / 100, height);
-    } else {
-      ctx.beginPath();
-      ctx.rect(0, 0, width, height * modesCtrl.sliderPos / 100);
-    }
-    ctx.clip();
-    drawA();
-    ctx.restore();
-  }
-
-  function exportComparison() {
-    if (!imgAObj || !imgBObj || !viewer || !modesCtrl || !workspace) {
-      updateStatusHint(i18n.t("noImageLoaded"), false);
-      return;
-    }
-
-    const rect = workspace.getBoundingClientRect();
-    const width = Math.max(1, Math.round(rect.width));
-    const height = Math.max(1, Math.round(rect.height));
-    const pixelRatio = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.round(width * pixelRatio);
-    canvas.height = Math.round(height * pixelRatio);
-
-    const ctx = canvas.getContext("2d");
-    if (!ctx) {
-      updateStatusHint(i18n.t("exportError"), false);
-      return;
-    }
-
-    try {
-      ctx.scale(pixelRatio, pixelRatio);
-      drawComparisonSnapshot(ctx, width, height);
-      canvas.toBlob(blob => {
-        if (!blob) {
-          updateStatusHint(i18n.t("exportError"), false);
-          return;
-        }
-
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-        link.href = url;
-        link.download = "PhotoCheck-comparison-" + stamp + ".png";
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
-        updateStatusHint(i18n.t("exportReady"), false);
-      }, "image/png");
-    } catch (error) {
-      console.error("PhotoCheck export error:", error);
-      updateStatusHint(i18n.t("exportError"), false);
-    }
-  }
-
   function handleSwap() {
-    if (!viewer || !modesCtrl) return;
-    viewer.swapImages();
-    const tempSrc = imageASrc;
-    imageASrc = imageBSrc;
-    imageBSrc = tempSrc;
-
-    const tempImg = imgAObj;
-    imgAObj = imgBObj;
-    imgBObj = tempImg;
-
-    const tempFile = fileObjA;
-    fileObjA = fileObjB;
-    fileObjB = tempFile;
-
-    const tempName = filenameA;
-    filenameA = filenameB;
-    filenameB = tempName;
-
+    if (!viewer || !modesCtrl || (!imageASrc && !imageBSrc)) return;
+    alignmentJobRevision++;
+    [imageASrc, imageBSrc] = [imageBSrc, imageASrc];
+    [imgAObj, imgBObj] = [imgBObj, imgAObj];
+    [fileObjA, fileObjB] = [fileObjB, fileObjA];
+    [objectUrlA, objectUrlB] = [objectUrlB, objectUrlA];
+    [filenameA, filenameB] = [filenameB, filenameA];
+    viewer.setImages(imgAObj, imgBObj);
     modesCtrl.updateImages(imageASrc, imageBSrc);
+    const fit = getFitDimensions();
+    viewer.centerBoth(fit.width, fit.height);
+    updatePreview("A", imageASrc);
+    updatePreview("B", imageBSrc);
     updateRightSidebarInfo();
     updateFilenameBadges();
+    updateScaleAUI();
+    updateScaleBUI();
+    updateSimilarityScore(null);
+    publishImageState();
+  }
+
+  function clearImageSlot(slot) {
+    if (slot !== "A" && slot !== "B") return;
+    alignmentJobRevision++;
+    loadRevision[slot]++;
+    if (slot === "A") {
+      if (objectUrlA) URL.revokeObjectURL(objectUrlA);
+      objectUrlA = imageASrc = null;
+      imgAObj = fileObjA = null;
+      filenameA = i18n.lang === "en" ? "Image A" : "Изображение A";
+    } else {
+      if (objectUrlB) URL.revokeObjectURL(objectUrlB);
+      objectUrlB = imageBSrc = null;
+      imgBObj = fileObjB = null;
+      filenameB = i18n.lang === "en" ? "Image B" : "Изображение B";
+    }
+    const input = document.getElementById(slot === "A" ? "file-input-a" : "file-input-b");
+    if (input) input.value = "";
+    cancelPointMode();
+    viewer?.setImages(imgAObj, imgBObj);
+    modesCtrl?.updateImages(imageASrc, imageBSrc);
+    const fit = getFitDimensions();
+    viewer?.centerBoth(fit.width, fit.height);
+    updatePreview(slot, null);
+    updateRightSidebarInfo();
+    updateFilenameBadges();
+    updateScaleAUI();
+    updateScaleBUI();
+    updateSimilarityScore(null);
+    publishImageState();
+    updateStatusHint(i18n.t("imageRemoved"), false);
+  }
+
+  function updatePairDependentControls() {
+    const hasA = Boolean(imageASrc);
+    const hasB = Boolean(imageBSrc);
+    const hasPair = hasA && hasB;
+    const pairOnlyIds = [
+      "btn-auto-opencv", "btn-auto-edge",
+      "btn-1point-align", "btn-2point-align", "btn-3point-align", "btn-4point-align",
+      "btn-match-sizes", "btn-quick-match",
+      "btn-align-a", "btn-align-b", "btn-sidebar-align-a", "btn-sidebar-align-b",
+      "btn-fade-0", "btn-fade-50", "btn-fade-100", "btn-fade-flash", "btn-auto-blink", "btn-toggle-diff"
+    ];
+
+    pairOnlyIds.forEach((id) => {
+      const control = document.getElementById(id);
+      if (!control) return;
+      control.disabled = !hasPair;
+      control.setAttribute("aria-disabled", String(!hasPair));
+      if (!hasPair) {
+        if (!control.dataset.originalTitle) control.dataset.originalTitle = control.title || "";
+        control.title = i18n.t("needPair");
+      } else if (control.dataset.originalTitle !== undefined) {
+        control.title = control.dataset.originalTitle;
+      }
+    });
+
+    const swapEnabled = hasA || hasB;
+    ["btn-swap", "btn-swap-bottom"].forEach((id) => {
+      const control = document.getElementById(id);
+      if (control) control.disabled = !swapEnabled;
+    });
+
+    ["scale-a-range", "scale-a-input"].forEach((id) => {
+      const control = document.getElementById(id);
+      if (control) control.disabled = !hasA;
+    });
+    ["scale-b-range", "scale-b-input"].forEach((id) => {
+      const control = document.getElementById(id);
+      if (control) control.disabled = !hasB;
+    });
+    const opacity = document.getElementById("opacity-range");
+    if (opacity) opacity.disabled = !hasPair;
+  }
+
+  function publishImageState() {
+    updatePairDependentControls();
+    // Publish the app's source-of-truth state. The viewer's <img> elements decode
+    // asynchronously, so UI state must not depend on their `complete` timing.
+    window.dispatchEvent(new CustomEvent("photocheck:images-state", {
+      detail: { hasA: Boolean(imageASrc), hasB: Boolean(imageBSrc), ready: Boolean(imageASrc && imageBSrc) }
+    }));
   }
 
   function checkBothImagesLoaded() {
-    if (!modesCtrl || !viewer || !workspace) return;
-    workspaceEmptyState?.classList.toggle("hidden", Boolean(imageASrc || imageBSrc));
+    if (!modesCtrl || !viewer || !workspace) {
+      publishImageState();
+      return;
+    }
+
+    modesCtrl.updateImages(imageASrc, imageBSrc);
+    viewer.setImages(imgAObj, imgBObj);
+    const fit = getFitDimensions();
+    viewer.centerBoth(fit.width, fit.height);
+    updateFilenameBadges();
+    updateScaleAUI();
+    updateScaleBUI();
+    updateZoomUI();
+    updateAlignButtonsUI();
+
     if (imageASrc && imageBSrc) {
-      modesCtrl.updateImages(imageASrc, imageBSrc);
-      viewer.setImages(imgAObj, imgBObj);
-      const rect = workspace.getBoundingClientRect();
-      viewer.centerBoth(rect.width, rect.height);
-      updateFilenameBadges();
       setActiveAlignTool(currentActiveAlignBtn || btnAutoEdge);
       updateStatusHint(i18n.t("imagesLoaded"), false);
-    } else if (imageASrc) {
-      modesCtrl.updateImages(imageASrc, null);
-      viewer.setImages(imgAObj, null);
-      const rect = workspace.getBoundingClientRect();
-      viewer.centerBoth(rect.width, rect.height);
-      updateFilenameBadges();
-    } else if (imageBSrc) {
-      modesCtrl.updateImages(null, imageBSrc);
-      viewer.setImages(null, imgBObj);
-      const rect = workspace.getBoundingClientRect();
-      viewer.centerBoth(rect.width, rect.height);
-      updateFilenameBadges();
     }
+    publishImageState();
   }
 
   function updateRightSidebarInfo() {
-    const thumbA = document.getElementById("thumb-a");
-    const infoNameA = document.getElementById("info-name-a");
-    const infoPathA = document.getElementById("info-path-a");
-    const infoResA = document.getElementById("info-res-a");
-    const infoFmtA = document.getElementById("info-fmt-a");
-    const infoSizeA = document.getElementById("info-size-a");
-    const infoDateA = document.getElementById("info-date-a");
+    const updateSlot = (slot, src, image, file, filename) => {
+      const suffix = slot.toLowerCase();
+      const thumb = document.getElementById(`thumb-${suffix}`);
+      const name = document.getElementById(`info-name-${suffix}`);
+      const path = document.getElementById(`info-path-${suffix}`);
+      const resolution = document.getElementById(`info-res-${suffix}`);
+      const format = document.getElementById(`info-fmt-${suffix}`);
+      const size = document.getElementById(`info-size-${suffix}`);
+      const date = document.getElementById(`info-date-${suffix}`);
+      const clearButton = document.getElementById(`btn-clear-${suffix}`);
 
-    if (imageASrc && thumbA) thumbA.src = imageASrc;
-    if (infoNameA) infoNameA.textContent = filenameA || "Изображение A";
-    if (infoPathA) infoPathA.textContent = fileObjA ? (fileObjA.path && fileObjA.path !== fileObjA.name ? fileObjA.path : "Источник: Файл") : "Источник: Буфер обмена";
-    if (infoResA && imgAObj) infoResA.textContent = `${imgAObj.naturalWidth} × ${imgAObj.naturalHeight}`;
-    if (infoFmtA && fileObjA) infoFmtA.textContent = fileObjA.type ? fileObjA.type.split("/")[1]?.toUpperCase() : "PNG";
-    if (infoSizeA && fileObjA) infoSizeA.textContent = `${(fileObjA.size / (1024 * 1024)).toFixed(2)} МБ`;
-    if (infoDateA && fileObjA) infoDateA.textContent = new Date(fileObjA.lastModified || Date.now()).toLocaleDateString("ru-RU");
+      clearButton?.classList.toggle("hidden", !src);
+      if (clearButton) {
+        const removeLabel = i18n.t(slot === "A" ? "removeImageA" : "removeImageB");
+        clearButton.title = removeLabel;
+        clearButton.setAttribute("aria-label", removeLabel);
+      }
+      if (thumb) {
+        if (src) thumb.src = src;
+        else thumb.removeAttribute("src");
+      }
+      if (name) name.textContent = src ? (filename || file?.name || `Image ${slot}`) : (i18n.lang === "en" ? "Not loaded" : "Не загружено");
+      if (path) path.textContent = src
+        ? (file ? (i18n.lang === "en" ? "Source: file" : "Источник: файл") : (i18n.lang === "en" ? "Source: clipboard" : "Источник: буфер обмена"))
+        : (i18n.lang === "en" ? `Choose image ${slot}` : `Выберите изображение ${slot}`);
+      if (resolution) resolution.textContent = image ? `${image.naturalWidth} × ${image.naturalHeight}` : "—";
+      if (format) {
+        const extension = file?.name?.split(".").pop()?.toUpperCase();
+        format.textContent = src ? (file?.type?.split("/")[1]?.toUpperCase() || extension || "Неизвестно") : "—";
+      }
+      if (size) size.textContent = src && file?.size ? `${(file.size / (1024 * 1024)).toFixed(2)} МБ` : "—";
+      if (date) date.textContent = src && file?.lastModified
+        ? new Date(file.lastModified).toLocaleDateString(i18n.lang === "en" ? "en-GB" : "ru-RU")
+        : "—";
+      const placeholder = thumb?.parentElement?.querySelector(".info-thumb-placeholder");
+      placeholder?.classList.toggle("hidden", Boolean(src));
+    };
 
-    const thumbB = document.getElementById("thumb-b");
-    const infoNameB = document.getElementById("info-name-b");
-    const infoPathB = document.getElementById("info-path-b");
-    const infoResB = document.getElementById("info-res-b");
-    const infoFmtB = document.getElementById("info-fmt-b");
-    const infoSizeB = document.getElementById("info-size-b");
-    const infoDateB = document.getElementById("info-date-b");
-
-    if (imageBSrc && thumbB) thumbB.src = imageBSrc;
-    if (infoNameB) infoNameB.textContent = filenameB || "Изображение B";
-    if (infoPathB) infoPathB.textContent = fileObjB ? (fileObjB.path && fileObjB.path !== fileObjB.name ? fileObjB.path : "Источник: Файл") : "Источник: Буфер обмена";
-    if (infoResB && imgBObj) infoResB.textContent = `${imgBObj.naturalWidth} × ${imgBObj.naturalHeight}`;
-    if (infoFmtB && fileObjB) infoFmtB.textContent = fileObjB.type ? fileObjB.type.split("/")[1]?.toUpperCase() : "PNG";
-    if (infoSizeB && fileObjB) infoSizeB.textContent = `${(fileObjB.size / (1024 * 1024)).toFixed(2)} МБ`;
-    if (infoDateB && fileObjB) infoDateB.textContent = new Date(fileObjB.lastModified || Date.now()).toLocaleDateString("ru-RU");
+    updateSlot("A", imageASrc, imgAObj, fileObjA, filenameA);
+    updateSlot("B", imageBSrc, imgBObj, fileObjB, filenameB);
   }
 
-  function setupDropzone(boxId, inputId, previewId, callback) {
+  function setupDropzone(boxId, inputId, slot) {
     const box = document.getElementById(boxId);
     const input = document.getElementById(inputId);
-    const preview = document.getElementById(previewId);
 
-    box?.addEventListener("click", (e) => {
-      if (e.target !== input) {
-        input?.click();
-      }
+    // The upload zone is a native label[for], so do not call input.click() here:
+    // doing both can open the file picker twice in some browsers.
+    input?.addEventListener("change", (event) => {
+      const file = event.target.files?.[0];
+      if (file) loadImageIntoSlot(slot, file);
+      event.target.value = "";
     });
 
-    input?.addEventListener("change", (e) => {
-      const file = e.target.files[0];
-      if (file) handleFile(file);
-      e.target.value = "";
-    });
-
-    box?.addEventListener("dragover", (e) => {
-      e.preventDefault();
+    box?.addEventListener("dragover", (event) => {
+      event.preventDefault();
       box.classList.add("drag-over");
     });
-
-    box?.addEventListener("dragleave", () => {
-      box.classList.remove("drag-over");
+    box?.addEventListener("dragleave", (event) => {
+      if (!box.contains(event.relatedTarget)) box.classList.remove("drag-over");
     });
-
-    box?.addEventListener("drop", (e) => {
-      e.preventDefault();
+    box?.addEventListener("drop", (event) => {
+      event.preventDefault();
       box.classList.remove("drag-over");
-      const file = e.dataTransfer.files[0];
-      if (file) handleFile(file);
+      const file = event.dataTransfer?.files?.[0];
+      if (file) loadImageIntoSlot(slot, file);
     });
-
-    function handleFile(file) {
-      if (!isImageFile(file)) {
-        updateStatusHint(i18n.t("invalidFile"), false);
-        return;
-      }
-      loadSingleFile(file, (src, img) => {
-        if (preview) {
-          preview.src = src;
-          preview.classList.remove("hidden");
-        }
-        callback(src, img, file);
-      });
-    }
   }
 
   // --- 3. Instantiation & Event Wiring ---
@@ -831,13 +818,24 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   modesCtrl = new ModesController(viewer, container);
+  updatePairDependentControls();
 
+  let previousViewportSize = container ? {
+    width: container.getBoundingClientRect().width,
+    height: container.getBoundingClientRect().height
+  } : null;
   const resizeObserver = new ResizeObserver(() => {
-    if (workspace && imgAObj && viewer) {
+    const rect = getViewportRect();
+    if (!rect || !viewer) return;
+    if ((imgAObj || imgBObj) && previousViewportSize) {
+      // Keep the same image point centered when side panels or the viewport change size.
+      viewer.panX += (rect.width - previousViewportSize.width) / 2;
+      viewer.panY += (rect.height - previousViewportSize.height) / 2;
       viewer.onStateChange();
     }
+    previousViewportSize = { width: rect.width, height: rect.height };
   });
-  if (workspace) resizeObserver.observe(workspace);
+  if (container) resizeObserver.observe(container);
 
   // Set default active tool highlight
   setActiveAlignTool(btnAutoEdge);
@@ -888,52 +886,30 @@ document.addEventListener("DOMContentLoaded", () => {
     langDropdownMenu?.classList.add("hidden");
   });
 
-  // Zoom Controls
-  zoomRange?.addEventListener("input", (e) => {
-    const val = parseFloat(e.target.value) / 100;
-    const rect = workspace.getBoundingClientRect();
-    viewer.setZoom(val, rect.left + rect.width / 2, rect.top + rect.height / 2, rect);
-  });
-
-  document.getElementById("btn-zoom-in")?.addEventListener("click", () => {
-    const rect = workspace.getBoundingClientRect();
-    viewer.setZoom(viewer.scale * 1.2, rect.left + rect.width / 2, rect.top + rect.height / 2, rect);
-  });
-
-  document.getElementById("btn-zoom-out")?.addEventListener("click", () => {
-    const rect = workspace.getBoundingClientRect();
-    viewer.setZoom(viewer.scale / 1.2, rect.left + rect.width / 2, rect.top + rect.height / 2, rect);
-  });
-
-  document.getElementById("btn-zoom-100")?.addEventListener("click", () => {
-    const rect = workspace.getBoundingClientRect();
-    viewer.setZoom(1.0, rect.left + rect.width / 2, rect.top + rect.height / 2, rect);
-  });
-
-  document.getElementById("btn-zoom-11")?.addEventListener("click", () => {
-    const rect = workspace.getBoundingClientRect();
-    viewer.setZoom(1.0, rect.left + rect.width / 2, rect.top + rect.height / 2, rect);
-  });
-
+  // Zoom Controls: every command uses the same focal-point-aware path.
+  zoomRange?.addEventListener("input", (event) => zoomAt(parseFloat(event.target.value) / 100));
+  document.getElementById("btn-zoom-in")?.addEventListener("click", () => zoomAt(viewer.getEffectiveZoom() * 1.2));
+  document.getElementById("btn-zoom-out")?.addEventListener("click", () => zoomAt(viewer.getEffectiveZoom() / 1.2));
+  document.getElementById("btn-zoom-11")?.addEventListener("click", () => zoomAt(1));
   document.getElementById("btn-zoom-fit")?.addEventListener("click", () => {
-    const rect = workspace.getBoundingClientRect();
-    viewer.centerBoth(rect.width, rect.height);
+    const fit = getFitDimensions();
+    viewer.centerBoth(fit.width, fit.height);
   });
 
   // Quick Bar Handlers
   document.getElementById("btn-quick-show-both")?.addEventListener("click", () => {
-    const rect = workspace.getBoundingClientRect();
-    viewer.centerBoth(rect.width, rect.height);
+    const fit = getFitDimensions();
+    viewer.centerBoth(fit.width, fit.height);
   });
-
   document.getElementById("btn-quick-fit")?.addEventListener("click", () => {
-    const rect = workspace.getBoundingClientRect();
-    viewer.centerBoth(rect.width, rect.height);
+    const fit = getFitDimensions();
+    viewer.centerBoth(fit.width, fit.height);
   });
-
-  document.getElementById("btn-quick-actual")?.addEventListener("click", () => {
-    const rect = workspace.getBoundingClientRect();
-    viewer.setZoom(1.0, rect.left + rect.width / 2, rect.top + rect.height / 2, rect);
+  document.getElementById("btn-quick-actual")?.addEventListener("click", () => zoomAt(1));
+  document.getElementById("btn-quick-sync-zoom")?.addEventListener("click", () => {
+    viewer.setSyncZoom(!viewer.syncZoom);
+    updateStatusHint(viewer.syncZoom ? i18n.t("syncZoomEnabled") : i18n.t("syncZoomDisabled"), false);
+    updateZoomUI();
   });
 
   // Size Controls
@@ -972,39 +948,41 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // Workspace Pan & Zoom
-  workspace?.addEventListener("mousedown", (e) => {
-    mouseDownPos = { x: e.clientX, y: e.clientY };
-    if (e.target.closest("#curtain-handle") || e.target.closest(".point-pin-badge") || e.target.closest(".floating-quick-bar")) return;
-    if (e.button === 0 || e.button === 1) {
-      isPanning = true;
-      lastMouse = { x: e.clientX, y: e.clientY };
-      workspace.classList.add("panning");
-    }
+  // Pointer-based canvas navigation supports mouse, pen and touch consistently.
+  let activePointerId = null;
+  workspace?.addEventListener("pointerdown", (event) => {
+    mouseDownPos = { x: event.clientX, y: event.clientY };
+    const interactive = event.target.closest("button, input, select, textarea, a, #curtain-handle, .point-pin-badge, .floating-quick-bar, .filename-badge, #point-align-banner");
+    if (interactive || ![0, 1].includes(event.button)) return;
+    activePointerId = event.pointerId;
+    isPanning = true;
+    lastMouse = { x: event.clientX, y: event.clientY };
+    workspace.classList.add("panning");
+    workspace.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
   });
 
-  window.addEventListener("mousemove", (e) => {
-    if (!isPanning || !viewer) return;
-    const dx = e.clientX - lastMouse.x;
-    const dy = e.clientY - lastMouse.y;
-    lastMouse = { x: e.clientX, y: e.clientY };
+  window.addEventListener("pointermove", (event) => {
+    if (!isPanning || event.pointerId !== activePointerId || !viewer) return;
+    const dx = event.clientX - lastMouse.x;
+    const dy = event.clientY - lastMouse.y;
+    lastMouse = { x: event.clientX, y: event.clientY };
     viewer.panBy(dx, dy);
   });
+  const finishPan = (event) => {
+    if (activePointerId === null || (event && event.pointerId !== activePointerId)) return;
+    isPanning = false;
+    activePointerId = null;
+    workspace?.classList.remove("panning");
+  };
+  window.addEventListener("pointerup", finishPan);
+  window.addEventListener("pointercancel", finishPan);
+  workspace?.addEventListener("lostpointercapture", finishPan);
 
-  window.addEventListener("mouseup", () => {
-    if (isPanning && workspace) {
-      isPanning = false;
-      workspace.classList.remove("panning");
-    }
-  });
-
-  workspace?.addEventListener("wheel", (e) => {
-    e.preventDefault();
-    if (!viewer) return;
-    const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
-    const newScale = viewer.scale * zoomFactor;
-    const rect = workspace.getBoundingClientRect();
-    viewer.setZoom(newScale, e.clientX, e.clientY, rect);
+  workspace?.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    const factor = event.deltaY < 0 ? 1.15 : 1 / 1.15;
+    zoomAt(viewer.getEffectiveZoom() * factor, event.clientX, event.clientY);
   }, { passive: false });
 
   // Mode Switching
@@ -1028,40 +1006,8 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     modesCtrl.setMode(mode);
-  });
-
-  document.getElementById("btn-compare-action")?.addEventListener("click", () => {
-    if (!imgAObj || !imgBObj || !viewer || !modesCtrl) {
-      updateStatusHint(i18n.t("noImageLoaded"), false);
-      return;
-    }
-
-    stopAutoBlink();
-    if (isFlashing) {
-      clearInterval(flashInterval);
-      isFlashing = false;
-      btnFadeFlash?.classList.remove("toggle-active");
-      setOpacityValue(250);
-    }
-
-    isDiffOverlay = false;
-    btnToggleDiff?.classList.remove("primary-tool", "active");
-    container?.classList.remove("diff-mode");
-    cancelPointMode();
-    viewer.setAlignTarget("none");
-    updateAlignButtonsUI();
-
-    modeSelector?.querySelectorAll(".btn-seg[data-mode]").forEach(button => {
-      button.classList.toggle("active", button.dataset.mode === "slider");
-    });
-    groupSliderControls?.classList.remove("hidden");
-    modesCtrl.setMode("slider");
-
-    const rect = workspace.getBoundingClientRect();
-    viewer.centerBoth(rect.width, rect.height);
-    updateScaleAUI();
-    updateScaleBUI();
-    updateStatusHint(i18n.t("compareReady"), false);
+    const fit = getFitDimensions();
+    if (imgAObj || imgBObj) viewer.centerBoth(fit.width, fit.height);
   });
 
   opacityRange?.addEventListener("input", (e) => {
@@ -1174,43 +1120,56 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  btnAutoEdge?.addEventListener("click", () => {
+  btnAutoEdge?.addEventListener("click", async () => {
     if (!imgAObj || !imgBObj || !viewer) return;
+    const sourceA = imgAObj;
+    const sourceB = imgBObj;
+    const jobRevision = ++alignmentJobRevision;
     setActiveAlignTool(btnAutoEdge);
-    updateStatusHint("Анализ контуров изображений...", true);
-    
-    setTimeout(() => {
-      const result = computeAutoEdgeAlignment(imgAObj, imgBObj);
-      if (result) {
-        viewer.setScaleRatioB(result.scaleRatioB);
-        viewer.offsetX = result.offsetX;
-        viewer.offsetY = result.offsetY;
-        viewer.onStateChange();
-        updateScaleBUI();
-        updateSimilarityScore(result.confidence);
-        updateStatusHint(`Авто-совмещение контуров выполнено! (Сходство: ${result.confidence}%)`, false);
-      } else {
-        updateSimilarityScore(null);
-        updateStatusHint("Не удалось выполнить авто-совмещение по контурам", false);
-      }
-    }, 50);
+    btnAutoEdge.disabled = true;
+    updateStatusHint(i18n.t("analyzingEdges"), true);
+    try {
+      await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
+      const result = computeAutoEdgeAlignment(sourceA, sourceB);
+      if (jobRevision !== alignmentJobRevision || sourceA !== imgAObj || sourceB !== imgBObj) return;
+      if (!result) throw new Error(i18n.t("autoAlignNotFound"));
+      viewer.clearTransformMatrix();
+      viewer.setScaleRatioB(result.scaleRatioB);
+      viewer.offsetX = result.offsetX;
+      viewer.offsetY = result.offsetY;
+      viewer.onStateChange();
+      updateScaleBUI();
+      updateSimilarityScore(result.confidence);
+      updateStatusHint(`Авто-совмещение выполнено · уверенность ${result.confidence}%`, false);
+    } catch (error) {
+      updateSimilarityScore(null);
+      updateStatusHint(error.message || "Не удалось выполнить автоматическое совмещение.", false);
+    } finally {
+      btnAutoEdge.disabled = false;
+    }
   });
 
   btnAutoOpenCV?.addEventListener("click", async () => {
     if (!imgAObj || !imgBObj || !viewer) return;
+    const sourceA = imgAObj;
+    const sourceB = imgBObj;
+    const jobRevision = ++alignmentJobRevision;
     setActiveAlignTool(btnAutoOpenCV);
     
     try {
       btnAutoOpenCV.disabled = true;
-      updateStatusHint("Загрузка движка OpenCV...", true);
+      updateStatusHint(i18n.t("loadingOpenCV"), true);
       await loadOpenCV((msg) => updateStatusHint(msg, true));
-      
-      const matrix = await computeOpenCVAlignment(imgAObj, imgBObj, (msg) => updateStatusHint(msg, true));
-      
+      if (jobRevision !== alignmentJobRevision || sourceA !== imgAObj || sourceB !== imgBObj) return;
+
+      const matrix = await computeOpenCVAlignment(sourceA, sourceB, (msg) => updateStatusHint(msg, true));
+      if (jobRevision !== alignmentJobRevision || sourceA !== imgAObj || sourceB !== imgBObj) return;
+
       viewer.clearTransformMatrix();
       viewer.transformMatrixB = matrix;
       viewer.onStateChange();
-      updateStatusHint("AI Автовыравнивание (OpenCV) успешно выполнено!", false);
+      updateSimilarityScore(null);
+      updateStatusHint(i18n.t("openCVAlignmentDone"), false);
     } catch (err) {
       console.error(err);
       updateStatusHint(`Ошибка AI автовыравнивания: ${err.message || err}`, false);
@@ -1219,7 +1178,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  workspace?.addEventListener("click", (e) => {
+  workspace?.addEventListener("click", async (e) => {
     if (activePointsMode === 0 || !viewer || !workspace) return;
 
     const distDragged = Math.hypot(e.clientX - mouseDownPos.x, e.clientY - mouseDownPos.y);
@@ -1236,7 +1195,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    const rect = workspace.getBoundingClientRect();
+    const rect = getViewportRect();
     const clickX = e.clientX - rect.left;
     const clickY = e.clientY - rect.top;
 
@@ -1247,35 +1206,32 @@ document.addEventListener("DOMContentLoaded", () => {
     if (expectingB && !isClickOnPhotoB(e.clientX, e.clientY)) return;
 
     if (expectingA) {
-      const trA = viewer.getTransformA();
-      const imgX = (clickX - trA.x) / trA.scale;
-      const imgY = (clickY - trA.y) / trA.scale;
-      pointsA.push({ x: imgX, y: imgY });
+      const paneA = modesCtrl?.currentMode === "split" ? document.getElementById("split-pane-a")?.getBoundingClientRect() : null;
+      const localX = paneA ? e.clientX - paneA.left : clickX;
+      const point = viewer.screenToImageA(localX, clickY);
+      if (!point || point.x < 0 || point.y < 0 || point.x > (imgAObj?.naturalWidth || 0) || point.y > (imgAObj?.naturalHeight || 0)) return;
+      pointsA.push(point);
       addPointPin(e.clientX, e.clientY, `A${pointsA.length}`);
       updateInstructionText();
     } else if (expectingB) {
-      const trB = viewer.getTransformB();
-      const imgX = (clickX - trB.x) / trB.scale;
-      const imgY = (clickY - trB.y) / trB.scale;
-      pointsB.push({ x: imgX, y: imgY });
+      const paneB = modesCtrl?.currentMode === "split" ? document.getElementById("split-pane-b")?.getBoundingClientRect() : null;
+      const localX = paneB ? e.clientX - paneB.left : clickX;
+      const point = viewer.screenToImageB(localX, clickY);
+      if (!point || point.x < 0 || point.y < 0 || point.x > (imgBObj?.naturalWidth || 0) || point.y > (imgBObj?.naturalHeight || 0)) return;
+      pointsB.push(point);
       addPointPin(e.clientX, e.clientY, `B${pointsB.length}`);
 
       if (pointsB.length === activePointsMode) {
         viewer.clearTransformMatrix();
-        if (activePointsMode === 1) {
-          viewer.alignByOnePoint(pointsA[0], pointsB[0]);
-        } else if (activePointsMode === 2) {
-          viewer.alignByTwoPoints(pointsA[0], pointsA[1], pointsB[0], pointsB[1]);
-          updateScaleBUI();
-        } else if (activePointsMode === 3) {
-          viewer.alignByThreePoints(pointsA, pointsB);
-        } else if (activePointsMode === 4) {
-          viewer.alignByFourPoints(pointsA, pointsB);
-        }
-        
-        setTimeout(() => {
-          cancelPointMode();
-        }, 300);
+        let aligned = false;
+        if (activePointsMode === 1) aligned = viewer.alignByOnePoint(pointsA[0], pointsB[0]);
+        else if (activePointsMode === 2) aligned = viewer.alignByTwoPoints(pointsA[0], pointsA[1], pointsB[0], pointsB[1]);
+        else if (activePointsMode === 3) aligned = await viewer.alignByThreePoints(pointsA, pointsB);
+        else if (activePointsMode === 4) aligned = await viewer.alignByFourPoints(pointsA, pointsB);
+        if (!aligned) updateStatusHint(i18n.t("invalidPointSet"), false);
+        updateScaleBUI();
+        updateSimilarityScore(null);
+        cancelPointMode();
       } else {
         updateInstructionText();
       }
@@ -1293,154 +1249,100 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.getElementById("btn-reset-all")?.addEventListener("click", () => {
     if (!viewer || !workspace) return;
-    viewer.clearTransformMatrix();
-    viewer.setScaleRatioA(1.0);
-    viewer.setScaleRatioB(1.0);
-    const rect = workspace.getBoundingClientRect();
-    viewer.centerBoth(rect.width, rect.height);
+    alignmentJobRevision++;
+    cancelPointMode();
+    stopAutoBlink();
+    if (isFlashing) clearInterval(flashInterval);
+    isFlashing = false;
+    flashInterval = null;
+    btnFadeFlash?.classList.remove("toggle-active");
+    btnAutoBlink?.classList.remove("toggle-active");
+    isDiffOverlay = false;
+    btnToggleDiff?.classList.remove("active", "primary-tool");
+    container?.classList.remove("diff-mode");
+    setOpacityValue(250);
+    modesCtrl?.setSliderOrientation("vertical");
+    modesCtrl?.setMode("slider");
+    btnSliderVert?.classList.add("active");
+    btnSliderHoriz?.classList.remove("active");
+    document.querySelectorAll("#mode-selector .btn-seg").forEach(button => {
+      button.classList.toggle("active", button.dataset.mode === "slider");
+    });
+    document.querySelectorAll("[data-preset]").forEach(button => {
+      const active = button.dataset.preset === "curtain";
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", String(active));
+    });
+    try { localStorage.setItem("photocheck-studio-compare", "curtain"); } catch { /* Optional preference. */ }
+    viewer.resetAlignment(false);
+    viewer.setSyncZoom(true);
+    const fit = getFitDimensions();
+    viewer.centerBoth(fit.width, fit.height);
+    updateSimilarityScore(null);
     updateScaleAUI();
     updateScaleBUI();
+    updateZoomUI();
+    updateAlignButtonsUI();
+    updateStatusHint(i18n.t("viewReset"), false);
   });
 
   document.getElementById("btn-center")?.addEventListener("click", () => {
     if (!viewer || !workspace) return;
-    const rect = workspace.getBoundingClientRect();
-    viewer.centerBoth(rect.width, rect.height);
+    const fit = getFitDimensions();
+    viewer.centerBoth(fit.width, fit.height);
   });
 
+  document.getElementById("btn-clear-a")?.addEventListener("click", () => clearImageSlot("A"));
+  document.getElementById("btn-clear-b")?.addEventListener("click", () => clearImageSlot("B"));
   document.getElementById("btn-swap")?.addEventListener("click", handleSwap);
   document.getElementById("btn-swap-bottom")?.addEventListener("click", handleSwap);
 
-  setupDropzone("dropzone-a", "file-input-a", "preview-a", (src, img, file) => {
-    imageASrc = src;
-    imgAObj = img;
-    fileObjA = file;
-    if (file) filenameA = file.name;
-    checkBothImagesLoaded();
-    updateRightSidebarInfo();
-  });
+  setupDropzone("dropzone-a", "file-input-a", "A");
+  setupDropzone("dropzone-b", "file-input-b", "B");
 
-  setupDropzone("dropzone-b", "file-input-b", "preview-b", (src, img, file) => {
-    imageBSrc = src;
-    imgBObj = img;
-    fileObjB = file;
-    if (file) filenameB = file.name;
-    checkBothImagesLoaded();
-    updateRightSidebarInfo();
-  });
-
-  window.addEventListener("dragover", (e) => {
-    e.preventDefault();
-  });
-
-  window.addEventListener("drop", (e) => {
-    if (e.target.closest("#dropzone-a") || e.target.closest("#dropzone-b")) return;
-    e.preventDefault();
-
-    const files = Array.from(e.dataTransfer.files).filter(isImageFile);
-    if (files.length === 0) return;
-
-    if (files.length >= 2) {
-      loadSingleFile(files[0], (srcA, imgA) => {
-        imageASrc = srcA; imgAObj = imgA; fileObjA = files[0]; filenameA = files[0].name;
-        const previewA = document.getElementById("preview-a");
-        if (previewA) { previewA.src = srcA; previewA.classList.remove("hidden"); }
-
-        loadSingleFile(files[1], (srcB, imgB) => {
-          imageBSrc = srcB; imgBObj = imgB; fileObjB = files[1]; filenameB = files[1].name;
-          const previewB = document.getElementById("preview-b");
-          if (previewB) { previewB.src = srcB; previewB.classList.remove("hidden"); }
-
-          checkBothImagesLoaded();
-          updateRightSidebarInfo();
-        });
-      });
-    } else if (files.length === 1) {
-      const targetSlot = !imageASrc ? 'A' : (!imageBSrc ? 'B' : 'A');
-      loadSingleFile(files[0], (src, img) => {
-        if (targetSlot === 'A') {
-          imageASrc = src; imgAObj = img; fileObjA = files[0]; filenameA = files[0].name;
-          const previewA = document.getElementById("preview-a");
-          if (previewA) { previewA.src = src; previewA.classList.remove("hidden"); }
-        } else {
-          imageBSrc = src; imgBObj = img; fileObjB = files[0]; filenameB = files[0].name;
-          const previewB = document.getElementById("preview-b");
-          if (previewB) { previewB.src = src; previewB.classList.remove("hidden"); }
-        }
-        checkBothImagesLoaded();
-        updateRightSidebarInfo();
-      });
+  window.addEventListener("dragover", (event) => event.preventDefault());
+  window.addEventListener("drop", (event) => {
+    const target = event.target;
+    if (target instanceof Element && target.closest("#dropzone-a, #dropzone-b")) return;
+    event.preventDefault();
+    const files = Array.from(event.dataTransfer?.files || []).filter(isImageFile);
+    if (files.length >= 2) loadImagePair(files[0], files[1]);
+    else if (files.length === 1) {
+      const targetSlot = !imageASrc ? "A" : (!imageBSrc ? "B" : "A");
+      loadImageIntoSlot(targetSlot, files[0]);
     }
   });
 
-  window.addEventListener("paste", (e) => {
-    const items = (e.clipboardData || e.originalEvent?.clipboardData)?.items;
+  window.addEventListener("paste", (event) => {
+    const items = (event.clipboardData || event.originalEvent?.clipboardData)?.items;
     if (!items) return;
-
     for (const item of items) {
-      if (item.type && item.type.indexOf("image") !== -1) {
-        const file = item.getAsFile();
-        if (!file) continue;
-        const targetSlot = !imageASrc ? 'A' : (!imageBSrc ? 'B' : 'A');
-        loadSingleFile(file, (src, img) => {
-          if (targetSlot === 'A') {
-            imageASrc = src; imgAObj = img; fileObjA = file; filenameA = "Буфер_обмена_A.png";
-            const previewA = document.getElementById("preview-a");
-            if (previewA) { previewA.src = src; previewA.classList.remove("hidden"); }
-          } else {
-            imageBSrc = src; imgBObj = img; fileObjB = file; filenameB = "Буфер_обмена_B.png";
-            const previewB = document.getElementById("preview-b");
-            if (previewB) { previewB.src = src; previewB.classList.remove("hidden"); }
-          }
-          checkBothImagesLoaded();
-          updateRightSidebarInfo();
-          updateStatusHint("Изображение из буфера обмена вставлено", false);
-        });
-        break;
-      }
+      if (!item.type?.startsWith("image/")) continue;
+      const file = item.getAsFile();
+      if (!file) continue;
+      const targetSlot = !imageASrc ? "A" : (!imageBSrc ? "B" : "A");
+      loadImageIntoSlot(targetSlot, file);
+      break;
     }
   });
 
   const fileInputPair = document.getElementById("file-input-pair");
-  fileInputPair?.addEventListener("change", (e) => {
-    const files = Array.from(e.target.files).filter(isImageFile);
-    if (files.length < 1) return;
-
-    e.target.value = "";
-
+  fileInputPair?.addEventListener("change", (event) => {
+    const files = Array.from(event.target.files || []).filter(isImageFile);
+    event.target.value = "";
     if (files.length >= 2) {
-      loadSingleFile(files[0], (src, img) => {
-        imageASrc = src;
-        imgAObj = img;
-        fileObjA = files[0];
-        filenameA = files[0].name;
-        const previewA = document.getElementById("preview-a");
-        if (previewA) { previewA.src = src; previewA.classList.remove("hidden"); }
-        updateRightSidebarInfo();
-
-        loadSingleFile(files[1], (srcB, imgB) => {
-          imageBSrc = srcB;
-          imgBObj = imgB;
-          fileObjB = files[1];
-          filenameB = files[1].name;
-          const previewB = document.getElementById("preview-b");
-          if (previewB) { previewB.src = srcB; previewB.classList.remove("hidden"); }
-          checkBothImagesLoaded();
-          updateRightSidebarInfo();
-        });
-      });
-    } else {
-      loadSingleFile(files[0], (src, img) => {
-        imageASrc = src;
-        imgAObj = img;
-        fileObjA = files[0];
-        filenameA = files[0].name;
-        const previewA = document.getElementById("preview-a");
-        if (previewA) { previewA.src = src; previewA.classList.remove("hidden"); }
-        checkBothImagesLoaded();
-        updateRightSidebarInfo();
-      });
+      loadImagePair(files[0], files[1]);
+    } else if (files.length === 1) {
+      const targetSlot = !imageASrc ? "A" : (!imageBSrc ? "B" : "A");
+      loadImageIntoSlot(targetSlot, files[0]);
     }
+  });
+
+  document.addEventListener("languageChanged", () => {
+    updateRightSidebarInfo();
+    updateFilenameBadges();
+    updateZoomUI();
+    updatePairDependentControls();
   });
 
   document.querySelectorAll(".lang-btn, .lang-option").forEach((btn) => {
@@ -1450,8 +1352,6 @@ document.addEventListener("DOMContentLoaded", () => {
       langDropdownMenu?.classList.add("hidden");
     });
   });
-
-  document.getElementById("btn-export-action")?.addEventListener("click", exportComparison);
 
   const helpModal = document.getElementById("help-modal");
   document.getElementById("btn-help")?.addEventListener("click", () => {
@@ -1463,4 +1363,41 @@ document.addEventListener("DOMContentLoaded", () => {
   helpModal?.addEventListener("click", (e) => {
     if (e.target === helpModal) helpModal.classList.add("hidden");
   });
+
+  document.addEventListener("keydown", (event) => {
+    const target = event.target;
+    const isEditing = target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
+    if (event.key === "Escape") {
+      cancelPointMode();
+      langDropdownMenu?.classList.add("hidden");
+      toolsDropdownMenu?.classList.add("hidden");
+      document.getElementById("help-modal")?.classList.add("hidden");
+      return;
+    }
+    if (isEditing || !(event.ctrlKey || event.metaKey || event.altKey || event.key === "0" || event.key === "1" || event.key === "+" || event.key === "=" || event.key === "-")) return;
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "o") {
+      event.preventDefault();
+      fileInputPair?.click();
+    } else if (!event.ctrlKey && !event.metaKey && event.key === "0") {
+      event.preventDefault();
+      const fit = getFitDimensions();
+      viewer?.centerBoth(fit.width, fit.height);
+    } else if (!event.ctrlKey && !event.metaKey && event.key === "1") {
+      event.preventDefault();
+      zoomAt(1);
+    } else if (event.key === "+" || event.key === "=") {
+      event.preventDefault();
+      zoomAt(viewer.getEffectiveZoom() * 1.2);
+    } else if (event.key === "-") {
+      event.preventDefault();
+      zoomAt(viewer.getEffectiveZoom() / 1.2);
+    }
+  });
+
+  window.addEventListener("beforeunload", () => {
+    if (objectUrlA) URL.revokeObjectURL(objectUrlA);
+    if (objectUrlB) URL.revokeObjectURL(objectUrlB);
+    if (autoBlinkInterval) clearInterval(autoBlinkInterval);
+    if (flashInterval) clearInterval(flashInterval);
+  }, { once: true });
 });

@@ -1,282 +1,193 @@
 /**
- * Advanced Auto-alignment module for PhotoCheck.
- * Implements Multi-Resolution Coarse-to-Fine Search with
- * Feature-Selective Zero-Mean Normalized Cross-Correlation (ZNCC) on Hybrid Feature Maps.
+ * Bounded coarse-to-fine edge alignment.
+ * Runs on reduced feature maps so large source photos do not block the UI for seconds.
  */
-
 export function computeAutoEdgeAlignment(imgA, imgB) {
   if (!imgA || !imgB) return null;
+  const widthA = imgA.naturalWidth || imgA.width || 0;
+  const heightA = imgA.naturalHeight || imgA.height || 0;
+  const widthB = imgB.naturalWidth || imgB.width || 0;
+  const heightB = imgB.naturalHeight || imgB.height || 0;
+  if (![widthA, heightA, widthB, heightB].every(value => Number.isFinite(value) && value > 0)) return null;
 
-  const wA = imgA.naturalWidth || imgA.width;
-  const hA = imgA.naturalHeight || imgA.height;
-  const wB = imgB.naturalWidth || imgB.width;
-  const hB = imgB.naturalHeight || imgB.height;
+  const baseScale = widthA / widthB;
+  // Keep the longest feature-map dimension bounded. Extremely tall scans or
+  // screenshots should not turn the exhaustive search into a multi-second freeze.
+  const maxAspect = Math.max(heightA / widthA, heightB / widthB, 1);
+  // Beyond 24:1, the crop is too elongated for a useful global ZNCC match.
+  // Bail out cleanly rather than allocating enormous feature maps; OpenCV or
+  // manual point alignment remains available for these unusual inputs.
+  if (maxAspect > 24) return null;
+  const resolutionScale = Math.min(1, 960 / (320 * maxAspect));
+  const coarseWidth = Math.max(16, Math.round(160 * resolutionScale));
+  const coarseHeightA = Math.max(24, Math.round(heightA / widthA * coarseWidth));
+  const coarseHeightB = Math.max(24, Math.round(heightB / widthB * coarseWidth));
+  const fineWidth = Math.max(24, Math.round(320 * resolutionScale));
+  const fineHeightA = Math.max(48, Math.round(heightA / widthA * fineWidth));
+  const fineHeightB = Math.max(48, Math.round(heightB / widthB * fineWidth));
 
-  if (!wA || !wB || !hA || !hB) return null;
+  try {
+    const canvasA = document.createElement("canvas");
+    const canvasB = document.createElement("canvas");
+    const contextA = canvasA.getContext("2d", { willReadFrequently: true });
+    const contextB = canvasB.getContext("2d", { willReadFrequently: true });
+    if (!contextA || !contextB) return null;
 
-  // Initial scale ratio to make B match A's width
-  const baseScaleB = wA / wB;
+    canvasA.width = coarseWidth; canvasA.height = coarseHeightA;
+    canvasB.width = coarseWidth; canvasB.height = coarseHeightB;
+    contextA.drawImage(imgA, 0, 0, coarseWidth, coarseHeightA);
+    contextB.drawImage(imgB, 0, 0, coarseWidth, coarseHeightB);
+    const coarseA = getHybridFeatureMap(contextA, coarseWidth, coarseHeightA);
+    const coarseB = getHybridFeatureMap(contextB, coarseWidth, coarseHeightB);
 
-  // --- PASS 1: Coarse Search ---
-  const coarseW = 280;
-  const coarseHA = Math.round((hA / wA) * coarseW);
-  const coarseHB = Math.round((hB / wB) * coarseW);
-
-  const canvasA = document.createElement("canvas");
-  canvasA.width = coarseW;
-  canvasA.height = coarseHA;
-  const ctxA = canvasA.getContext("2d");
-  ctxA.drawImage(imgA, 0, 0, coarseW, coarseHA);
-
-  const canvasB = document.createElement("canvas");
-  canvasB.width = coarseW;
-  canvasB.height = coarseHB;
-  const ctxB = canvasB.getContext("2d");
-  ctxB.drawImage(imgB, 0, 0, coarseW, coarseHB);
-
-  const mapA1 = getHybridFeatureMap(ctxA, coarseW, coarseHA);
-  const mapB1 = getHybridFeatureMap(ctxB, coarseW, coarseHB);
-
-  let bestCoarseScore = -2;
-  let bestCoarseScale = baseScaleB;
-  let bestCoarseShiftX = 0;
-  let bestCoarseShiftY = 0;
-
-  // Scale search range: 60% to 140% of base scale
-  const scaleMin1 = baseScaleB * 0.60;
-  const scaleMax1 = baseScaleB * 1.40;
-  const steps1 = 17;
-  const scaleStep1 = (scaleMax1 - scaleMin1) / (steps1 - 1);
-
-  for (let s = 0; s < steps1; s++) {
-    const testScale = scaleMin1 + s * scaleStep1;
-    const testW = Math.round(coarseW * (testScale / baseScaleB));
-    const testH = Math.round(coarseHB * (testScale / baseScaleB));
-    if (testW <= 10 || testH <= 10) continue;
-
-    const scaledB = resizeFeatureMapBilinear(mapB1, coarseW, coarseHB, testW, testH);
-
-    const maxShiftX = Math.round(coarseW * 0.40);
-    const maxShiftY = Math.round(coarseHA * 0.40);
-    const stepSize = 3;
-
-    for (let dy = -maxShiftY; dy <= maxShiftY; dy += stepSize) {
-      for (let dx = -maxShiftX; dx <= maxShiftX; dx += stepSize) {
-        const score = computeZNCC(mapA1, coarseW, coarseHA, scaledB, testW, testH, dx, dy);
-        if (score > bestCoarseScore) {
-          bestCoarseScore = score;
-          bestCoarseScale = testScale;
-          bestCoarseShiftX = dx;
-          bestCoarseShiftY = dy;
+    let best = { score: -1, scale: baseScale, dx: 0, dy: 0 };
+    const coarseScaleSteps = 7;
+    for (let index = 0; index < coarseScaleSteps; index++) {
+      const factor = 0.78 + index * (0.44 / (coarseScaleSteps - 1));
+      const scale = baseScale * factor;
+      const testWidth = Math.max(12, Math.round(coarseWidth * factor));
+      const testHeight = Math.max(12, Math.round(coarseHeightB * factor));
+      const scaledB = resizeFeatureMapBilinear(coarseB, coarseWidth, coarseHeightB, testWidth, testHeight);
+      const maxDx = Math.round(coarseWidth * 0.22);
+      const maxDy = Math.round(coarseHeightA * 0.22);
+      for (let dy = -maxDy; dy <= maxDy; dy += 4) {
+        for (let dx = -maxDx; dx <= maxDx; dx += 4) {
+          const score = computeZNCC(coarseA, coarseWidth, coarseHeightA, scaledB, testWidth, testHeight, dx, dy, 4);
+          if (score > best.score) best = { score, scale, dx, dy };
         }
       }
     }
-  }
 
-  // --- PASS 2: Fine Search ---
-  const fineW = 560;
-  const fineHA = Math.round((hA / wA) * fineW);
-  const fineHB = Math.round((hB / wB) * fineW);
+    canvasA.width = fineWidth; canvasA.height = fineHeightA;
+    canvasB.width = fineWidth; canvasB.height = fineHeightB;
+    contextA.drawImage(imgA, 0, 0, fineWidth, fineHeightA);
+    contextB.drawImage(imgB, 0, 0, fineWidth, fineHeightB);
+    const fineA = getHybridFeatureMap(contextA, fineWidth, fineHeightA);
+    const fineB = getHybridFeatureMap(contextB, fineWidth, fineHeightB);
 
-  canvasA.width = fineW;
-  canvasA.height = fineHA;
-  ctxA.drawImage(imgA, 0, 0, fineW, fineHA);
-
-  canvasB.width = fineW;
-  canvasB.height = fineHB;
-  ctxB.drawImage(imgB, 0, 0, fineW, fineHB);
-
-  const mapA2 = getHybridFeatureMap(ctxA, fineW, fineHA);
-  const mapB2 = getHybridFeatureMap(ctxB, fineW, fineHB);
-
-  const scaleMin2 = bestCoarseScale * 0.94;
-  const scaleMax2 = bestCoarseScale * 1.06;
-  const steps2 = 13;
-  const scaleStep2 = (scaleMax2 - scaleMin2) / (steps2 - 1);
-
-  const baseShiftX2 = (bestCoarseShiftX / coarseW) * fineW;
-  const baseShiftY2 = (bestCoarseShiftY / coarseHA) * fineHA;
-
-  let bestFineScore = -2;
-  let bestFineScale = bestCoarseScale;
-  let bestFineShiftX = baseShiftX2;
-  let bestFineShiftY = baseShiftY2;
-
-  for (let s = 0; s < steps2; s++) {
-    const testScale = scaleMin2 + s * scaleStep2;
-    const testW = Math.round(fineW * (testScale / baseScaleB));
-    const testH = Math.round(fineHB * (testScale / baseScaleB));
-    if (testW <= 10 || testH <= 10) continue;
-
-    const scaledB = resizeFeatureMapBilinear(mapB2, fineW, fineHB, testW, testH);
-
-    const shiftSearchRadius = 24;
-    const stepSize2 = 1;
-
-    for (let dy = baseShiftY2 - shiftSearchRadius; dy <= baseShiftY2 + shiftSearchRadius; dy += stepSize2) {
-      for (let dx = baseShiftX2 - shiftSearchRadius; dx <= baseShiftX2 + shiftSearchRadius; dx += stepSize2) {
-        const score = computeZNCC(mapA2, fineW, fineHA, scaledB, testW, testH, Math.round(dx), Math.round(dy));
-        if (score > bestFineScore) {
-          bestFineScore = score;
-          bestFineScale = testScale;
-          bestFineShiftX = dx;
-          bestFineShiftY = dy;
-        }
-      }
-    }
-  }
-
-  // Fallback to center fit if confidence is too low (< 10%)
-  if (bestFineScore < 0.10) {
-    const defaultScale = parseFloat(baseScaleB.toFixed(4));
-    const defaultOffsetX = parseFloat(((wA - wB * defaultScale) / 2).toFixed(2));
-    const defaultOffsetY = parseFloat(((hA - hB * defaultScale) / 2).toFixed(2));
-    return {
-      scaleRatioB: defaultScale,
-      offsetX: defaultOffsetX,
-      offsetY: defaultOffsetY,
-      confidence: 50
+    let bestFine = {
+      score: -1,
+      scale: best.scale,
+      dx: best.dx * (fineWidth / coarseWidth),
+      dy: best.dy * (fineHeightA / coarseHeightA)
     };
-  }
-
-  // Convert refined shift to Image B's required positioning offset
-  // (Invert sign because if feature in B is at y+dy, B must be shifted by -dy to align with A)
-  const scaleFactorX = wA / fineW;
-  const scaleFactorY = hA / fineHA;
-
-  const offsetX = -bestFineShiftX * scaleFactorX;
-  const offsetY = -bestFineShiftY * scaleFactorY;
-
-  const confidencePercent = Math.max(0, Math.min(100, Math.round(((bestFineScore + 1) / 2) * 100)));
-
-  return {
-    scaleRatioB: parseFloat(bestFineScale.toFixed(4)),
-    offsetX: parseFloat(offsetX.toFixed(2)),
-    offsetY: parseFloat(offsetY.toFixed(2)),
-    confidence: confidencePercent
-  };
-}
-
-/**
- * Computes Hybrid Feature Map (Sobel Edge Magnitudes + Luminance Contrast)
- */
-function getHybridFeatureMap(ctx, w, h) {
-  const imgData = ctx.getImageData(0, 0, w, h);
-  const data = imgData.data;
-  const gray = new Float32Array(w * h);
-
-  for (let i = 0; i < data.length; i += 4) {
-    gray[i / 4] = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-  }
-
-  const featureMap = new Float32Array(w * h);
-  for (let y = 1; y < h - 1; y++) {
-    for (let x = 1; x < w - 1; x++) {
-      const idx = y * w + x;
-      const gx =
-        -gray[idx - w - 1] + gray[idx - w + 1] -
-        2 * gray[idx - 1] + 2 * gray[idx + 1] -
-        gray[idx + w - 1] + gray[idx + w + 1];
-
-      const gy =
-        -gray[idx - w - 1] - 2 * gray[idx - w] - gray[idx - w + 1] +
-        gray[idx + w - 1] + 2 * gray[idx + w] + gray[idx + w + 1];
-
-      const mag = Math.sqrt(gx * gx + gy * gy);
-      featureMap[idx] = mag * 0.7 + gray[idx] * 0.3;
-    }
-  }
-  return featureMap;
-}
-
-/**
- * Resizes feature map using smooth Bilinear Interpolation
- */
-function resizeFeatureMapBilinear(src, srcW, srcH, dstW, dstH) {
-  const dst = new Float32Array(dstW * dstH);
-  if (dstW <= 0 || dstH <= 0) return dst;
-
-  const xRatio = (srcW - 1) / Math.max(1, dstW - 1);
-  const yRatio = (srcH - 1) / Math.max(1, dstH - 1);
-
-  for (let y = 0; y < dstH; y++) {
-    const srcY = y * yRatio;
-    const y1 = Math.floor(srcY);
-    const y2 = Math.min(srcH - 1, y1 + 1);
-    const yDiff = srcY - y1;
-
-    for (let x = 0; x < dstW; x++) {
-      const srcX = x * xRatio;
-      const x1 = Math.floor(srcX);
-      const x2 = Math.min(srcW - 1, x1 + 1);
-      const xDiff = srcX - x1;
-
-      const A = src[y1 * srcW + x1];
-      const B = src[y1 * srcW + x2];
-      const C = src[y2 * srcW + x1];
-      const D = src[y2 * srcW + x2];
-
-      const val =
-        A * (1 - xDiff) * (1 - yDiff) +
-        B * xDiff * (1 - yDiff) +
-        C * (1 - xDiff) * yDiff +
-        D * xDiff * yDiff;
-
-      dst[y * dstW + x] = val;
-    }
-  }
-  return dst;
-}
-
-/**
- * Feature-Selective Zero-Mean Normalized Cross-Correlation (ZNCC)
- */
-function computeZNCC(mapA, wA, hA, mapB, wB, hB, dx, dy) {
-  const startY = Math.max(0, -dy);
-  const endY = Math.min(hA, hB - dy);
-  const startX = Math.max(0, -dx);
-  const endX = Math.min(wA, wB - dx);
-
-  let sumA = 0, sumB = 0;
-  let count = 0;
-
-  for (let y = startY; y < endY; y += 2) {
-    const idxA = y * wA;
-    const idxB = (y + dy) * wB + dx;
-    for (let x = startX; x < endX; x += 2) {
-      const valA = mapA[idxA + x];
-      const valB = mapB[idxB + x];
-      if (valA > 12 || valB > 12) {
-        sumA += valA;
-        sumB += valB;
-        count++;
+    const fineCenterX = bestFine.dx;
+    const fineCenterY = bestFine.dy;
+    for (let index = 0; index < 7; index++) {
+      const factor = (best.scale / baseScale) - 0.045 + index * (0.09 / 6);
+      const scale = baseScale * factor;
+      const testWidth = Math.max(12, Math.round(fineWidth * factor));
+      const testHeight = Math.max(12, Math.round(fineHeightB * factor));
+      const scaledB = resizeFeatureMapBilinear(fineB, fineWidth, fineHeightB, testWidth, testHeight);
+      for (let dy = Math.round(fineCenterY - 12); dy <= Math.round(fineCenterY + 12); dy += 2) {
+        for (let dx = Math.round(fineCenterX - 12); dx <= Math.round(fineCenterX + 12); dx += 2) {
+          const score = computeZNCC(fineA, fineWidth, fineHeightA, scaledB, testWidth, testHeight, dx, dy, 2);
+          if (score > bestFine.score) bestFine = { score, scale, dx, dy };
+        }
       }
     }
+
+    // A weak correlation is not a successful match; do not return a fake 50% score.
+    if (!Number.isFinite(bestFine.score) || bestFine.score < 0.12) return null;
+    const offsetX = -bestFine.dx * (widthA / fineWidth);
+    const offsetY = -bestFine.dy * (heightA / fineHeightA);
+    return {
+      scaleRatioB: Number(bestFine.scale.toFixed(5)),
+      offsetX: Number(offsetX.toFixed(2)),
+      offsetY: Number(offsetY.toFixed(2)),
+      confidence: Math.max(0, Math.min(100, Math.round(bestFine.score * 100)))
+    };
+  } catch (error) {
+    console.warn("Auto edge alignment failed:", error);
+    return null;
+  }
+}
+
+function getHybridFeatureMap(context, width, height) {
+  const { data } = context.getImageData(0, 0, width, height);
+  const gray = new Float32Array(width * height);
+  for (let i = 0, pixel = 0; i < data.length; i += 4, pixel++) {
+    gray[pixel] = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
   }
 
+  const features = new Float32Array(width * height);
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      const index = y * width + x;
+      const gx = -gray[index - width - 1] + gray[index - width + 1]
+        - 2 * gray[index - 1] + 2 * gray[index + 1]
+        - gray[index + width - 1] + gray[index + width + 1];
+      const gy = -gray[index - width - 1] - 2 * gray[index - width] - gray[index - width + 1]
+        + gray[index + width - 1] + 2 * gray[index + width] + gray[index + width + 1];
+      features[index] = Math.hypot(gx, gy) * 0.75 + gray[index] * 0.25;
+    }
+  }
+  return features;
+}
+
+function resizeFeatureMapBilinear(source, sourceWidth, sourceHeight, targetWidth, targetHeight) {
+  const target = new Float32Array(targetWidth * targetHeight);
+  const xRatio = (sourceWidth - 1) / Math.max(1, targetWidth - 1);
+  const yRatio = (sourceHeight - 1) / Math.max(1, targetHeight - 1);
+  for (let y = 0; y < targetHeight; y++) {
+    const sourceY = y * yRatio;
+    const y0 = Math.floor(sourceY);
+    const y1 = Math.min(sourceHeight - 1, y0 + 1);
+    const fy = sourceY - y0;
+    for (let x = 0; x < targetWidth; x++) {
+      const sourceX = x * xRatio;
+      const x0 = Math.floor(sourceX);
+      const x1 = Math.min(sourceWidth - 1, x0 + 1);
+      const fx = sourceX - x0;
+      const a = source[y0 * sourceWidth + x0];
+      const b = source[y0 * sourceWidth + x1];
+      const c = source[y1 * sourceWidth + x0];
+      const d = source[y1 * sourceWidth + x1];
+      target[y * targetWidth + x] = a * (1 - fx) * (1 - fy) + b * fx * (1 - fy) + c * (1 - fx) * fy + d * fx * fy;
+    }
+  }
+  return target;
+}
+
+function computeZNCC(mapA, widthA, heightA, mapB, widthB, heightB, dx, dy, sampleStep = 2) {
+  dx = Math.round(dx);
+  dy = Math.round(dy);
+  const startY = Math.max(0, -dy);
+  const endY = Math.min(heightA, heightB - dy);
+  const startX = Math.max(0, -dx);
+  const endX = Math.min(widthA, widthB - dx);
+  if (endX - startX < 8 || endY - startY < 8) return -1;
+
+  let sumA = 0, sumB = 0, count = 0;
+  for (let y = startY; y < endY; y += sampleStep) {
+    const indexA = y * widthA;
+    const indexB = (y + dy) * widthB + dx;
+    for (let x = startX; x < endX; x += sampleStep) {
+      const a = mapA[indexA + x];
+      const b = mapB[indexB + x];
+      if (a > 8 || b > 8) { sumA += a; sumB += b; count++; }
+    }
+  }
   if (count < 25) return -1;
 
   const meanA = sumA / count;
   const meanB = sumB / count;
-
-  let num = 0, denA = 0, denB = 0;
-
-  for (let y = startY; y < endY; y += 2) {
-    const idxA = y * wA;
-    const idxB = (y + dy) * wB + dx;
-    for (let x = startX; x < endX; x += 2) {
-      const valA = mapA[idxA + x];
-      const valB = mapB[idxB + x];
-      if (valA > 12 || valB > 12) {
-        const diffA = valA - meanA;
-        const diffB = valB - meanB;
-        num += diffA * diffB;
-        denA += diffA * diffA;
-        denB += diffB * diffB;
+  let numerator = 0, varianceA = 0, varianceB = 0;
+  for (let y = startY; y < endY; y += sampleStep) {
+    const indexA = y * widthA;
+    const indexB = (y + dy) * widthB + dx;
+    for (let x = startX; x < endX; x += sampleStep) {
+      const a = mapA[indexA + x];
+      const b = mapB[indexB + x];
+      if (a > 8 || b > 8) {
+        const da = a - meanA;
+        const db = b - meanB;
+        numerator += da * db;
+        varianceA += da * da;
+        varianceB += db * db;
       }
     }
   }
-
-  const denom = Math.sqrt(denA * denB);
-  return denom > 0 ? num / denom : -1;
+  const denominator = Math.sqrt(varianceA * varianceB);
+  return denominator > 1e-8 ? numerator / denominator : -1;
 }

@@ -16,11 +16,11 @@ export class ModesController {
       <!-- Single Viewport Container (for Slider & Fade) -->
       <div id="overlay-viewport" class="viewport mode-view">
         <div class="img-wrapper layer-b" id="wrapper-b">
-          <img id="img-element-b" alt="Photo B" draggable="false" />
+          <img id="img-element-b" alt="" draggable="false" />
         </div>
         <div class="clipper-a" id="clipper-a">
           <div class="img-wrapper layer-a" id="wrapper-a">
-            <img id="img-element-a" alt="Photo A" draggable="false" />
+            <img id="img-element-a" alt="" draggable="false" />
           </div>
         </div>
         <!-- Interactive Curtain Handle for Slider mode -->
@@ -39,14 +39,14 @@ export class ModesController {
         <div class="split-pane pane-left" id="split-pane-a">
           <div class="split-badge">A</div>
           <div class="img-wrapper" id="wrapper-split-a">
-            <img id="img-split-a" alt="Photo A" draggable="false" />
+            <img id="img-split-a" alt="" draggable="false" />
           </div>
         </div>
         <div class="split-divider"></div>
         <div class="split-pane pane-right" id="split-pane-b">
           <div class="split-badge">B</div>
           <div class="img-wrapper" id="wrapper-split-b">
-            <img id="img-split-b" alt="Photo B" draggable="false" />
+            <img id="img-split-b" alt="" draggable="false" />
           </div>
         </div>
       </div>
@@ -133,52 +133,57 @@ export class ModesController {
   }
 
   setupCurtainDrag() {
-    let isDraggingCurtain = false;
+    let pointerId = null;
 
-    const onPointerDown = (e) => {
-      if (this.currentMode !== "slider") return;
-      isDraggingCurtain = true;
+    const onPointerDown = (event) => {
+      if (this.currentMode !== "slider" || !event.isPrimary) return;
+      pointerId = event.pointerId;
+      this.curtainHandle.setPointerCapture?.(pointerId);
       document.body.classList.add("user-select-none");
-      e.stopPropagation();
+      event.preventDefault();
+      event.stopPropagation();
     };
 
-    const onPointerMove = (e) => {
-      if (!isDraggingCurtain) return;
+    const onPointerMove = (event) => {
+      if (pointerId === null || event.pointerId !== pointerId) return;
       const rect = this.overlayViewport.getBoundingClientRect();
-      let percent;
-      if (this.sliderOrientation === "vertical") {
-        percent = ((e.clientX - rect.left) / rect.width) * 100;
-      } else {
-        percent = ((e.clientY - rect.top) / rect.height) * 100;
-      }
+      if (!rect.width || !rect.height) return;
+      const percent = this.sliderOrientation === "vertical"
+        ? ((event.clientX - rect.left) / rect.width) * 100
+        : ((event.clientY - rect.top) / rect.height) * 100;
       this.setSliderPosition(percent);
-      e.stopPropagation();
+      event.preventDefault();
+      event.stopPropagation();
     };
 
-    const onPointerUp = () => {
-      if (isDraggingCurtain) {
-        isDraggingCurtain = false;
-        document.body.classList.remove("user-select-none");
-      }
+    const onPointerUp = (event) => {
+      if (pointerId === null || (event && event.pointerId !== pointerId)) return;
+      pointerId = null;
+      document.body.classList.remove("user-select-none");
     };
 
-    this.curtainHandle.addEventListener("mousedown", onPointerDown);
-    this.curtainHandle.addEventListener("touchstart", onPointerDown, { passive: true });
-    window.addEventListener("mousemove", onPointerMove);
-    window.addEventListener("touchmove", onPointerMove, { passive: true });
-    window.addEventListener("mouseup", onPointerUp);
-    window.addEventListener("touchend", onPointerUp);
+    this.curtainHandle.style.touchAction = "none";
+    this.curtainHandle.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("pointermove", onPointerMove, { passive: false });
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
+    this.curtainHandle.addEventListener("lostpointercapture", onPointerUp);
   }
 
   updateImages(srcA, srcB) {
-    if (srcA) {
-      this.imgElA.src = srcA;
-      this.imgSplitA.src = srcA;
-    }
-    if (srcB) {
-      this.imgElB.src = srcB;
-      this.imgSplitB.src = srcB;
-    }
+    const syncSource = (img, src) => {
+      if (!img) return;
+      if (src) {
+        if (img.getAttribute("src") !== src) img.src = src;
+      } else {
+        img.removeAttribute("src");
+      }
+    };
+    syncSource(this.imgElA, srcA);
+    syncSource(this.imgSplitA, srcA);
+    syncSource(this.imgElB, srcB);
+    syncSource(this.imgSplitB, srcB);
+    this.render();
   }
 
   render() {

@@ -1,120 +1,88 @@
 /**
- * Mathematical solvers for Affine and Perspective (Homography) transformations.
- */
-
-/**
- * Solves a linear system Ax = b using Gaussian elimination.
- * @param {number[][]} A Matrix of coefficients
- * @param {number[]} b Vector of constants
- * @returns {number[]|null} Solution vector x, or null if singular
+ * Stable solvers for affine and projective 2D transforms.
+ * Returned matrices are CSS-compatible and map source image points to destination points.
  */
 function gaussianElimination(A, b) {
   const n = b.length;
-  const M = [];
-  for (let i = 0; i < n; i++) {
-    M.push([...A[i], b[i]]);
-  }
+  if (!n || A.length !== n || A.some(row => row.length !== n) || b.some(v => !Number.isFinite(v))) return null;
+  const M = A.map((row, index) => [...row, b[index]]);
 
-  for (let i = 0; i < n; i++) {
-    let maxRow = i;
-    for (let k = i + 1; k < n; k++) {
-      if (Math.abs(M[k][i]) > Math.abs(M[maxRow][i])) {
-        maxRow = k;
-      }
+  for (let col = 0; col < n; col++) {
+    let pivotRow = col;
+    for (let row = col + 1; row < n; row++) {
+      if (Math.abs(M[row][col]) > Math.abs(M[pivotRow][col])) pivotRow = row;
     }
+    const pivot = M[pivotRow][col];
+    if (!Number.isFinite(pivot) || Math.abs(pivot) < 1e-10) return null;
+    [M[col], M[pivotRow]] = [M[pivotRow], M[col]];
 
-    if (Math.abs(M[maxRow][i]) < 1e-10) return null;
-
-    const temp = M[i];
-    M[i] = M[maxRow];
-    M[maxRow] = temp;
-
-    for (let k = i + 1; k < n; k++) {
-      const c = -M[k][i] / M[i][i];
-      for (let j = i; j < n + 1; j++) {
-        if (i === j) {
-          M[k][j] = 0;
-        } else {
-          M[k][j] += c * M[i][j];
-        }
-      }
+    const divisor = M[col][col];
+    for (let j = col; j <= n; j++) M[col][j] /= divisor;
+    for (let row = 0; row < n; row++) {
+      if (row === col) continue;
+      const factor = M[row][col];
+      if (!factor) continue;
+      for (let j = col; j <= n; j++) M[row][j] -= factor * M[col][j];
     }
   }
-
-  const x = new Array(n).fill(0);
-  for (let i = n - 1; i >= 0; i--) {
-    x[i] = M[i][n] / M[i][i];
-    for (let k = i - 1; k >= 0; k--) {
-      M[k][n] -= M[k][i] * x[i];
-    }
-  }
-
-  return x;
+  const solution = M.map(row => row[n]);
+  return solution.every(Number.isFinite) ? solution : null;
 }
 
-/**
- * Computes the 2D Affine transformation matrix mapping 3 points from src to dst.
- * Returns an array representing a CSS matrix: [a, b, c, d, e, f]
- */
+function validPoints(points, count) {
+  return Array.isArray(points) && points.length === count && points.every(p =>
+    p && Number.isFinite(p.x) && Number.isFinite(p.y)
+  );
+}
+
+function hasNonCollinearTriplet(points) {
+  const [a, b, c] = points;
+  const area2 = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+  return Math.abs(area2) > 1e-6;
+}
+
 export function solveAffine(src, dst) {
-  if (src.length !== 3 || dst.length !== 3) return null;
-
-  const Ax = [
-    [src[0].x, src[0].y, 1],
-    [src[1].x, src[1].y, 1],
-    [src[2].x, src[2].y, 1]
-  ];
-  const bx = [dst[0].x, dst[1].x, dst[2].x];
-  const solX = gaussianElimination(Ax, bx);
-
-  const Ay = [
-    [src[0].x, src[0].y, 1],
-    [src[1].x, src[1].y, 1],
-    [src[2].x, src[2].y, 1]
-  ];
-  const by = [dst[0].y, dst[1].y, dst[2].y];
-  const solY = gaussianElimination(Ay, by);
-
+  if (!validPoints(src, 3) || !validPoints(dst, 3) || !hasNonCollinearTriplet(src)) return null;
+  const A = src.map(p => [p.x, p.y, 1]);
+  const solX = gaussianElimination(A, dst.map(p => p.x));
+  const solY = gaussianElimination(A, dst.map(p => p.y));
   if (!solX || !solY) return null;
-
-  const a = solX[0], c = solX[1], e = solX[2];
-  const b = solY[0], d = solY[1], f = solY[2];
-
-  return [a, b, c, d, e, f];
+  const [a, c, e] = solX;
+  const [b, d, f] = solY;
+  const result = [a, b, c, d, e, f];
+  return result.every(Number.isFinite) ? result : null;
 }
 
-/**
- * Computes the Homography matrix mapping 4 points from src to dst.
- * Returns an array representing a CSS matrix3d.
- */
 export function solveHomography(src, dst) {
-  if (src.length !== 4 || dst.length !== 4) return null;
+  if (!validPoints(src, 4) || !validPoints(dst, 4)) return null;
+  if (!hasNonCollinearTriplet(src.slice(0, 3)) || !hasNonCollinearTriplet(dst.slice(0, 3))) return null;
 
   const A = [];
   const b = [];
-
   for (let i = 0; i < 4; i++) {
-    const sx = src[i].x;
-    const sy = src[i].y;
-    const dx = dst[i].x;
-    const dy = dst[i].y;
-
-    A.push([sx, sy, 1, 0, 0, 0, -dx * sx, -dx * sy]);
-    b.push(dx);
-
-    A.push([0, 0, 0, sx, sy, 1, -dy * sx, -dy * sy]);
-    b.push(dy);
+    const { x: sx, y: sy } = src[i];
+    const { x: dx, y: dy } = dst[i];
+    A.push([sx, sy, 1, 0, 0, 0, -dx * sx, -dx * sy]); b.push(dx);
+    A.push([0, 0, 0, sx, sy, 1, -dy * sx, -dy * sy]); b.push(dy);
   }
-
   const h = gaussianElimination(A, b);
   if (!h) return null;
-
-  const H = [h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], 1.0];
-
-  return [
-    H[0], H[3], 0, H[6],
-    H[1], H[4], 0, H[7],
-    0,    0,    1, 0,
-    H[2], H[5], 0, H[8]
+  const [h0, h1, h2, h3, h4, h5, h6, h7] = h;
+  const result = [
+    h0, h3, 0, h6,
+    h1, h4, 0, h7,
+    0, 0, 1, 0,
+    h2, h5, 0, 1
   ];
+  return result.every(Number.isFinite) ? result : null;
+}
+
+export function projectHomography(matrix3d, point) {
+  if (!Array.isArray(matrix3d) || matrix3d.length !== 16) return null;
+  const w = matrix3d[3] * point.x + matrix3d[7] * point.y + matrix3d[15];
+  if (!Number.isFinite(w) || Math.abs(w) < 1e-10) return null;
+  return {
+    x: (matrix3d[0] * point.x + matrix3d[4] * point.y + matrix3d[12]) / w,
+    y: (matrix3d[1] * point.x + matrix3d[5] * point.y + matrix3d[13]) / w
+  };
 }
