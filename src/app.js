@@ -711,7 +711,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function checkBothImagesLoaded() {
     if (!modesCtrl || !viewer || !workspace) return;
-    workspaceEmptyState?.classList.toggle("hidden", Boolean(imageASrc && imageBSrc));
+    workspaceEmptyState?.classList.toggle("hidden", Boolean(imageASrc || imageBSrc));
     if (imageASrc && imageBSrc) {
       modesCtrl.updateImages(imageASrc, imageBSrc);
       viewer.setImages(imgAObj, imgBObj);
@@ -1044,7 +1044,9 @@ document.addEventListener("DOMContentLoaded", () => {
     isDiffOverlay = false;
     btnToggleDiff?.classList.remove("primary-tool", "active");
     container?.classList.remove("diff-mode");
+    cancelPointMode();
     viewer.setAlignTarget("none");
+    updateAlignButtonsUI();
 
     modeSelector?.querySelectorAll(".btn-seg[data-mode]").forEach(button => {
       button.classList.toggle("active", button.dataset.mode === "slider");
