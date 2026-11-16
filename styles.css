@@ -1425,20 +1425,51 @@ button:focus-visible, input:focus-visible, label:focus-visible { outline: 2px so
 }
 #viewer-container { background: transparent; }
 
-/* Friendly empty state. ModesController owns the children of #viewer-container. */
-#viewer-container:not(:has(img[src]))::before {
-  content: "Загрузите изображения для сравнения";
-  position: absolute; z-index: 0; top: 50%; left: 50%;
-  width: min(440px, calc(100% - 36px)); transform: translate(-50%, calc(-50% - 28px));
-  color: rgba(220, 228, 242, 0.78); font-size: clamp(1rem, 1.6vw, 1.35rem);
-  font-weight: 650; letter-spacing: -0.025em; text-align: center; pointer-events: none;
+/* Workspace onboarding state */
+.workspace-empty-state {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 28px;
+  text-align: center;
+  pointer-events: none;
 }
-#viewer-container:not(:has(img[src]))::after {
-  content: "Перетащите файлы в нижние слоты или вставьте изображение из буфера обмена";
-  position: absolute; z-index: 0; top: 50%; left: 50%;
-  width: min(420px, calc(100% - 48px)); transform: translate(-50%, 14px);
-  color: #718098; font-size: 0.78rem; line-height: 1.65;
-  text-align: center; pointer-events: none;
+.empty-state-mark {
+  width: 76px;
+  height: 76px;
+  display: grid;
+  place-items: center;
+  border-radius: 23px;
+  color: #afa4ff;
+  background: linear-gradient(145deg, rgba(139,124,255,0.16), rgba(98,183,255,0.07));
+  border: 1px solid rgba(155,140,255,0.22);
+  box-shadow: 0 16px 42px rgba(0,0,0,0.18), inset 0 1px rgba(255,255,255,0.05);
+}
+.empty-state-mark svg {
+  width: 38px;
+  height: 38px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.workspace-empty-title {
+  color: rgba(231, 236, 247, 0.9);
+  font-size: clamp(1rem, 1.5vw, 1.28rem);
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}
+.workspace-empty-state p {
+  max-width: 390px;
+  color: #7888a1;
+  font-size: 0.76rem;
+  line-height: 1.65;
 }
 .filename-badge {
   top: 16px; padding: 9px 12px; min-width: 150px; border-radius: 11px;
