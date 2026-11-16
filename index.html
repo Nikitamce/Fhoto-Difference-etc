@@ -3,421 +3,256 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0b0d12" />
   <title data-i18n="appTitle">PhotoCheck — Visual Photo Comparison</title>
-  <meta name="theme-color" content="#0b1020" />
-  <meta name="description" content="PhotoCheck — локальная студия визуального сравнения изображений." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
+  <svg class="svg-sprite" aria-hidden="true">
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></symbol>
+    <symbol id="i-slider" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 2v20M8 9l-3 3 3 3M16 9l3 3-3 3"/></symbol>
+    <symbol id="i-fade" viewBox="0 0 24 24"><circle cx="10" cy="12" r="7"/><circle cx="14" cy="12" r="7"/></symbol>
+    <symbol id="i-split" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></symbol>
+    <symbol id="i-horizontal" viewBox="0 0 24 24"><path d="M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4"/></symbol>
+    <symbol id="i-vertical" viewBox="0 0 24 24"><path d="M12 3v18M8 7l4-4 4 4M8 17l4 4 4-4"/></symbol>
+    <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-fit" viewBox="0 0 24 24"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.6 9a2.5 2.5 0 1 1 3.3 2.4c-.9.4-.9 1.1-.9 1.6M12 17h.01"/></symbol>
+    <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="m12 3 1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3ZM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15ZM5 14l.8 2.2L8 17l-2.2.8L5 20l-.8-2.2L2 17l2.2-.8L5 14Z"/></symbol>
+    <symbol id="i-scan" viewBox="0 0 24 24"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5M7 12h10"/></symbol>
+    <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></symbol>
+    <symbol id="i-points" viewBox="0 0 24 24"><circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="m8 16 8-8M6 5v5M3.5 7.5h5"/></symbol>
+    <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5M6.1 8A7 7 0 0 1 18 6l2 6M17.9 16A7 7 0 0 1 6 18l-2-6"/></symbol>
+    <symbol id="i-perspective" viewBox="0 0 24 24"><path d="m5 5 14-2-2 18-12-2V5ZM5 5l12 16M19 3 5 19"/></symbol>
+    <symbol id="i-resize" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7"/></symbol>
+    <symbol id="i-center" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M12 8v8M8 12h8"/></symbol>
+    <symbol id="i-reset" viewBox="0 0 24 24"><path d="M4 4v6h6M5.5 15a7 7 0 1 0 .5-7l-2 2"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5ZM3 12l9 5 9-5M3 16l9 5 9-5"/></symbol>
+    <symbol id="i-swap" viewBox="0 0 24 24"><path d="M4 7h14M14 3l4 4-4 4M20 17H6M10 13l-4 4 4 4"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="m10 13 4-4M8 16l-1 1a3.5 3.5 0 0 1-5-5l3-3a3.5 3.5 0 0 1 5 0M16 8l1-1a3.5 3.5 0 0 1 5 5l-3 3a3.5 3.5 0 0 1-5 0"/></symbol>
+    <symbol id="i-hand" viewBox="0 0 24 24"><path d="M8 12V5a2 2 0 0 1 4 0v6-8a2 2 0 0 1 4 0v8-5a2 2 0 0 1 4 0v9c0 4-2 6-6 6h-1c-3 0-5-2-7-5l-3-5a2 2 0 0 1 3-2l2 3Z"/></symbol>
+    <symbol id="i-tag" viewBox="0 0 24 24"><path d="M20 13 13 20a2 2 0 0 1-3 0l-7-7V3h10l7 7a2 2 0 0 1 0 3Z"/><circle cx="8" cy="8" r="1.5"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24"><path d="m13 2-9 12h8l-1 8 9-12h-8l1-8Z"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-diff" viewBox="0 0 24 24"><circle cx="10" cy="10" r="7"/><path d="m15 15 6 6M7 10h6M10 7v6"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V3M7 8l5-5 5 5M4 14v6h16v-6"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 6a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6Z"/></symbol>
+    <symbol id="i-compare" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></symbol>
+    <symbol id="i-export" viewBox="0 0 24 24"><path d="M12 3v13M7 11l5 5 5-5M4 17v4h16v-4"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m8 10 4 4 4-4"/></symbol>
+  </svg>
+
   <div id="app">
-    <!-- Header Navbar -->
     <header class="app-header">
       <div class="header-left">
-        <button class="panel-toggle-btn" id="btn-collapse-left" title="Свернуть/Развернуть панель" aria-label="Свернуть левую панель"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+        <button class="panel-toggle-btn" id="btn-collapse-left" title="Свернуть/Развернуть панель" aria-label="Свернуть левую панель"><svg class="icon"><use href="#i-menu"/></svg></button>
         <div class="logo-group">
-          <div class="logo-icon">
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
-              <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-9 14l-3.5-4.5l2.5 3.01L11.5 13.5l3.5-4.5l4.5 6H10z"/>
-            </svg>
-          </div>
-          <h1>PhotoCheck <span class="subtitle">STUDIO</span></h1>
+          <div class="logo-icon"><svg class="icon"><use href="#i-layers"/></svg></div>
+          <div class="brand-copy"><h1>PhotoCheck</h1><span>VISUAL COMPARE</span></div>
         </div>
       </div>
 
-      <div class="header-center" role="toolbar" aria-label="Панель просмотра">
-        <!-- View Mode Segmented Control -->
-        <div class="segmented-control" id="mode-selector" role="group" aria-label="Режим сравнения">
-          <button class="btn-seg active" data-mode="slider" data-i18n-title="modeSlider">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M13 3h-2v18h2V3zm-5 4H4v10h4V7zm12 0h-4v10h4V7z"/></svg>
-            <span data-i18n="modeSlider">Шторка (Slider)</span>
-          </button>
-          <button class="btn-seg" data-mode="fade" data-i18n-title="modeFade">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 2A10 10 0 0 0 2 12a10 10 0 0 0 10 10 10 10 0 0 0 10-10A10 10 0 0 0 12 2zm0 18V4a8 8 0 0 1 0 16z"/></svg>
-            <span data-i18n="modeFade">Наложение (Fade)</span>
-          </button>
-          <button class="btn-seg" data-mode="split" data-i18n-title="modeSplit">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2ZM8 16H5V5h6v14zm8 0h-6V5h6v14z"/></svg>
-            <span data-i18n="modeSplit">Рядом (Split)</span>
-          </button>
+      <div class="header-center">
+        <div class="segmented-control mode-control" id="mode-selector">
+          <button class="btn-seg active" data-mode="slider" data-i18n-title="modeSlider"><svg class="icon"><use href="#i-slider"/></svg><span data-i18n="modeSlider">Шторка (Slider)</span></button>
+          <button class="btn-seg" data-mode="fade" data-i18n-title="modeFade"><svg class="icon"><use href="#i-fade"/></svg><span data-i18n="modeFade">Наложение (Fade)</span></button>
+          <button class="btn-seg" data-mode="split" data-i18n-title="modeSplit"><svg class="icon"><use href="#i-split"/></svg><span data-i18n="modeSplit">Рядом (Split)</span></button>
         </div>
 
-        <!-- Slider Orientation -->
-        <div class="segmented-control" id="group-slider-controls" role="group" aria-label="Ориентация разделителя">
-          <button class="btn-seg active" id="btn-slider-vertical" data-i18n-title="orientationHoriz">
-            ↔ <span data-i18n="orientationHoriz">Вертикальная линия</span>
-          </button>
-          <button class="btn-seg" id="btn-slider-horizontal" data-i18n-title="orientationVert">
-            ↕ <span data-i18n="orientationVert">Горизонтальная линия</span>
-          </button>
+        <div class="segmented-control orientation-control" id="group-slider-controls">
+          <button class="btn-seg active" id="btn-slider-vertical" data-i18n-title="orientationHoriz"><svg class="icon"><use href="#i-horizontal"/></svg><span data-i18n="orientationHoriz">Вертикальная линия</span></button>
+          <button class="btn-seg" id="btn-slider-horizontal" data-i18n-title="orientationVert"><svg class="icon"><use href="#i-vertical"/></svg><span data-i18n="orientationVert">Горизонтальная линия</span></button>
         </div>
 
-        <!-- Zoom Bar -->
         <div class="header-zoom-group">
-          <button id="btn-zoom-out" class="btn-icon" title="Уменьшить">-</button>
+          <button id="btn-zoom-out" class="btn-icon" title="Уменьшить"><svg class="icon"><use href="#i-minus"/></svg></button>
           <input type="range" id="zoom-range" min="10" max="1000" step="1" value="100" class="range-input header-zoom-range" />
-          <button id="btn-zoom-in" class="btn-icon" title="Увеличить">+</button>
+          <button id="btn-zoom-in" class="btn-icon" title="Увеличить"><svg class="icon"><use href="#i-plus"/></svg></button>
           <span id="zoom-val" class="val-badge">100%</span>
-
-          <div class="segmented-control">
+          <div class="zoom-presets">
             <button class="btn-seg" id="btn-zoom-100">100%</button>
             <button class="btn-seg" id="btn-zoom-11">1:1</button>
-            <button class="btn-seg" id="btn-zoom-fit" data-i18n-title="fitWindow" title="По размеру окна">⛶</button>
+            <button class="btn-seg" id="btn-zoom-fit" data-i18n-title="fitWindow" title="По размеру окна"><svg class="icon"><use href="#i-fit"/></svg></button>
           </div>
         </div>
       </div>
 
       <div class="header-right">
-        <!-- Language Selector Dropdown -->
         <div class="custom-dropdown lang-dropdown">
-          <button id="lang-dropdown-btn" class="btn-action lang-dropdown-btn" title="Выбор языка / Language">
-            <span id="current-lang-flag">🇷🇺</span>
-            <span id="current-lang-code">RU</span>
-            <span class="dropdown-arrow">▼</span>
-          </button>
+          <button id="lang-dropdown-btn" class="lang-dropdown-btn" title="Выбор языка / Language"><span id="current-lang-flag">🇷🇺</span><span id="current-lang-code">RU</span><svg class="icon dropdown-arrow"><use href="#i-chevron"/></svg></button>
           <div id="lang-dropdown-menu" class="dropdown-menu hidden">
             <button class="dropdown-item lang-option active" data-lang="ru">🇷🇺 Русский (RU)</button>
             <button class="dropdown-item lang-option" data-lang="en">🇬🇧 English (EN)</button>
           </div>
         </div>
-
-        <button class="btn-icon help-button" id="btn-help" title="Справка" aria-label="Открыть справку">?</button>
-        <button class="panel-toggle-btn" id="btn-collapse-right" title="Свернуть/Развернуть правую панель" aria-label="Свернуть правую панель"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+        <button class="btn-icon help-btn" id="btn-help" title="Справка"><svg class="icon"><use href="#i-help"/></svg></button>
+        <button class="panel-toggle-btn" id="btn-collapse-right" title="Свернуть/Развернуть правую панель" aria-label="Свернуть правую панель"><svg class="icon"><use href="#i-menu"/></svg></button>
       </div>
     </header>
 
-    <!-- Main Workspace Layout -->
     <div class="app-main-layout">
-      <!-- Left Panel: Tools & Alignment -->
       <aside class="sidebar sidebar-left" id="panel-left">
         <div class="sidebar-header">
-          <span class="sidebar-title" data-i18n="sidebarAlignment">ВЫРАВНИВАНИЕ</span>
-          <button class="btn-panel-close" id="btn-close-left-inner" title="Свернуть">«</button>
+          <div><span class="sidebar-kicker">01 / TOOLS</span><span class="sidebar-title" data-i18n="sidebarAlignment">ВЫРАВНИВАНИЕ</span></div>
+          <button class="btn-panel-close" id="btn-close-left-inner" title="Свернуть">‹</button>
         </div>
-
         <div class="sidebar-content">
+          <p class="section-description">Совместите кадры для точного сравнения деталей</p>
           <div class="sidebar-section">
-            <button id="btn-auto-opencv" class="btn-tool">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6 2.1 2.1m0-12.8-2.1 2.1m-8.6 8.6-2.1 2.1"/><circle cx="12" cy="12" r="5"/></svg><span data-i18n="alignAutoOpenCV">Автовыравнивание AI (OpenCV)</span>
-            </button>
-            <button id="btn-auto-edge" class="btn-tool primary-tool">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/><path d="M10 7h4M7 10v4m10-4v4m-7 3h4"/></svg><span data-i18n="alignAutoEdge">Найти контуры (Авто)</span>
-            </button>
-            <button id="btn-1point-align" class="btn-tool">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/></svg><span data-i18n="alignOnePoint">По 1 точке</span>
-            </button>
-            <button id="btn-2point-align" class="btn-tool">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="17" r="2.5"/><circle cx="18" cy="7" r="2.5"/><path d="M8 15 16 9"/></svg><span data-i18n="alignTwoPoints">По 2 точкам</span>
-            </button>
-            <button id="btn-3point-align" class="btn-tool">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 9A7 7 0 0 1 18 6l2 1M4 17l2 1a7 7 0 0 0 11.9-3"/></svg><span data-i18n="alignThreePoints">По 3 точкам (Поворот)</span>
-            </button>
-            <button id="btn-4point-align" class="btn-tool">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6M4 4v6M20 4h-6m6 0v6M4 20v-6m0 6h6m10 0h-6m6 0v-6"/></svg><span data-i18n="alignFourPoints">По 4 точкам (Перспектива)</span>
-            </button>
-            <button id="btn-warp-align" class="btn-tool">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 6 14-2-1 15-14 1z"/><path d="m5 6 13 13M19 4 4 20"/></svg><span data-i18n="alignWarp">Деформация перспективы (4 точки)</span>
-            </button>
+            <button id="btn-auto-opencv" class="btn-tool"><span class="tool-icon"><svg class="icon"><use href="#i-sparkles"/></svg></span><span data-i18n="alignAutoOpenCV">Автовыравнивание AI (OpenCV)</span></button>
+            <button id="btn-auto-edge" class="btn-tool primary-tool"><span class="tool-icon"><svg class="icon"><use href="#i-scan"/></svg></span><span data-i18n="alignAutoEdge">Найти контуры (Авто)</span></button>
           </div>
-
+          <div class="sidebar-section-title" data-i18n="sectionExtra">ДОПОЛНИТЕЛЬНО</div>
+          <div class="sidebar-section point-tools">
+            <button id="btn-1point-align" class="btn-tool"><span class="tool-icon"><svg class="icon"><use href="#i-target"/></svg></span><span data-i18n="alignOnePoint">По 1 точке</span></button>
+            <button id="btn-2point-align" class="btn-tool"><span class="tool-icon"><svg class="icon"><use href="#i-points"/></svg></span><span data-i18n="alignTwoPoints">По 2 точкам</span></button>
+            <button id="btn-3point-align" class="btn-tool"><span class="tool-icon"><svg class="icon"><use href="#i-rotate"/></svg></span><span data-i18n="alignThreePoints">По 3 точкам (Поворот)</span></button>
+            <button id="btn-4point-align" class="btn-tool"><span class="tool-icon"><svg class="icon"><use href="#i-perspective"/></svg></span><span data-i18n="alignFourPoints">По 4 точкам (Перспектива)</span></button>
+          </div>
           <div class="sidebar-section-title" data-i18n="sectionExtra">ДОПОЛНИТЕЛЬНО</div>
           <div class="sidebar-section">
-            <button id="btn-match-sizes" class="btn-tool">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/><path d="M8 8h8v8H8z"/></svg><span data-i18n="matchSizes">Совместить размер</span>
-            </button>
-            <button id="btn-center" class="btn-tool">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 2v20M2 12h20"/></svg><span data-i18n="centerBoth">Центрировать</span>
-            </button>
+            <button id="btn-match-sizes" class="btn-tool"><span class="tool-icon"><svg class="icon"><use href="#i-resize"/></svg></span><span data-i18n="matchSizes">Совместить размер</span></button>
+            <button id="btn-center" class="btn-tool"><span class="tool-icon"><svg class="icon"><use href="#i-center"/></svg></span><span data-i18n="centerBoth">Центрировать</span></button>
           </div>
         </div>
-
-        <div class="sidebar-footer">
-          <button id="btn-reset-all" class="btn-reset">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 2.6-6.4L3 8"/><path d="M3 3v5h5"/></svg><span data-i18n="resetView">Сбросить все</span>
-          </button>
-        </div>
+        <div class="sidebar-footer"><button id="btn-reset-all" class="btn-reset"><svg class="icon"><use href="#i-reset"/></svg><span data-i18n="resetView">Сбросить все</span></button></div>
       </aside>
 
-      <!-- Restore Tab Left -->
-      <button id="btn-restore-left" class="panel-restore-tab restore-left hidden" title="Развернуть левую панель">»</button>
+      <button id="btn-restore-left" class="panel-restore-tab restore-left hidden" title="Развернуть левую панель">›</button>
 
-      <!-- Main Canvas Workspace -->
       <main class="workspace" id="workspace">
         <div id="viewer-container"></div>
-        <div id="workspace-empty-state" class="workspace-empty-state" aria-live="polite">
-          <div class="empty-state-mark" aria-hidden="true">
-            <svg viewBox="0 0 48 48"><rect x="7" y="9" width="34" height="30" rx="5"/><circle cx="18" cy="20" r="3"/><path d="m10 34 10-10 7 7 5-5 6 8"/></svg>
-          </div>
-          <div class="workspace-empty-title" data-i18n="noImageLoaded">Загрузите обе фотографии для начала сравнения</div>
-          <p data-i18n="dragDropHint">Перетащите фото сюда или кликните для выбора</p>
+        <div class="workspace-empty" id="workspace-empty">
+          <div class="empty-visual"><span></span><span></span><svg class="icon"><use href="#i-compare"/></svg></div>
+          <h2 data-i18n="emptyTitle">Найдите разницу в деталях</h2>
+          <p data-i18n="emptyText">Загрузите два изображения в панели ниже или перетащите их в рабочую область</p>
         </div>
+        <div id="filename-badge-a" class="filename-badge filename-badge-left hidden"><span class="badge-tag" data-i18n="photoALabel">Изображение A</span><span id="badge-name-a">2K.png • 1920×1080</span></div>
+        <div id="filename-badge-b" class="filename-badge filename-badge-right hidden"><span class="badge-tag" data-i18n="photoBLabel">Изображение B</span><span id="badge-name-b">full.png • 1920×1080</span></div>
+        <div id="point-align-banner" class="point-align-banner hidden"><span id="point-align-instruction">Кликните Точку 1 на фото A</span><button id="btn-cancel-2point" class="btn-action" data-i18n="cancel">Отмена</button></div>
 
-        <!-- Dynamic Filename Badges -->
-        <div id="filename-badge-a" class="filename-badge filename-badge-left hidden">
-          <span class="badge-tag" data-i18n="photoALabel">Изображение A</span>
-          <span id="badge-name-a">2K.png • 1920×1080</span>
-        </div>
-        <div id="filename-badge-b" class="filename-badge filename-badge-right hidden">
-          <span class="badge-tag" data-i18n="photoBLabel">Изображение B</span>
-          <span id="badge-name-b">full.png • 1920×1080</span>
-        </div>
-
-        <!-- Point Alignment Helper Banner -->
-        <div id="point-align-banner" class="point-align-banner hidden">
-          <span id="point-align-instruction">Кликните Точку 1 на фото A</span>
-          <button id="btn-cancel-2point" class="btn-action" data-i18n="cancel" style="padding: 2px 8px; font-size: 0.78rem;">Отмена</button>
-        </div>
-
-        <!-- Floating Quick Action Bar (Bottom Center of Canvas) -->
         <div class="floating-quick-bar" id="quick-actions-bar">
           <button id="btn-collapse-quick" class="quick-bar-toggle-btn" title="Свернуть панель быстрых действий">⌄</button>
           <div class="quick-bar-content">
-            <button id="btn-quick-show-both" class="btn-quick">
-              🖼️ <span data-i18n="showBoth">Показать обе</span>
-            </button>
-            <button id="btn-swap" class="btn-quick">
-              ⇄ <span data-i18n="swapPhotos">Поменять местами</span>
-            </button>
-            <div id="btn-quick-sync-zoom" class="btn-quick active sync-indicator" role="status" aria-label="Масштаб синхронизирован">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.1 0l2.1-2.1a5 5 0 0 0-7.1-7.1l-1.2 1.2"/><path d="M14 11a5 5 0 0 0-7.1 0l-2.1 2.1a5 5 0 0 0 7.1 7.1l1.2-1.2"/></svg>
-              <span data-i18n="syncZoom">Синхронизировать зум</span>
-            </div>
-            <button id="btn-quick-fit" class="btn-quick">
-              ⛶ <span data-i18n="fitWindow">По размеру окна</span>
-            </button>
-            <button id="btn-quick-actual" class="btn-quick">
-              1:1 <span data-i18n="actualSize">Фактический размер</span>
-            </button>
+            <button id="btn-quick-show-both" class="btn-quick"><svg class="icon"><use href="#i-layers"/></svg><span data-i18n="showBoth">Показать обе</span></button>
+            <button id="btn-swap" class="btn-quick"><svg class="icon"><use href="#i-swap"/></svg><span data-i18n="swapPhotos">Поменять местами</span></button>
+            <button id="btn-quick-flash" class="btn-quick btn-quick-flash" data-i18n-title="flashToggle" title="Быстрое мигание"><svg class="icon"><use href="#i-bolt"/></svg><span data-i18n="flashToggle">Быстрое мигание</span><span class="blink-status-dot"></span></button>
+            <span class="quick-divider"></span>
+            <button id="btn-quick-fit" class="btn-quick"><svg class="icon"><use href="#i-fit"/></svg><span data-i18n="fitWindow">По размеру окна</span></button>
+            <button id="btn-quick-actual" class="btn-quick"><strong>1:1</strong><span data-i18n="actualSize">Фактический размер</span></button>
           </div>
         </div>
-        
-        <!-- Tab to Restore Quick Actions Bar -->
-        <button id="btn-restore-quick" class="quick-bar-restore-tab hidden" title="Развернуть панель быстрых действий">⚡ Быстрые действия ⌃</button>
+        <button id="btn-restore-quick" class="quick-bar-restore-tab hidden" title="Развернуть панель быстрых действий"><svg class="icon"><use href="#i-bolt"/></svg> Быстрые действия ⌃</button>
       </main>
 
-      <!-- Restore Tab Right -->
-      <button id="btn-restore-right" class="panel-restore-tab restore-right hidden" title="Развернуть правую панель">«</button>
+      <button id="btn-restore-right" class="panel-restore-tab restore-right hidden" title="Развернуть правую панель">‹</button>
 
-      <!-- Right Sidebar: Info & Metadata -->
       <aside class="sidebar sidebar-right" id="panel-right">
         <div class="sidebar-header">
-          <span class="sidebar-title" data-i18n="sidebarInfo">ИНФОРМАЦИЯ</span>
-          <button class="btn-panel-close" id="btn-close-right-inner" title="Свернуть">»</button>
+          <div><span class="sidebar-kicker">02 / DETAILS</span><span class="sidebar-title" data-i18n="sidebarInfo">ИНФОРМАЦИЯ</span></div>
+          <button class="btn-panel-close" id="btn-close-right-inner" title="Свернуть">›</button>
         </div>
-
         <div class="sidebar-content">
-          <!-- Card Image A -->
-          <div class="info-card">
-            <div class="info-card-header">
-              <span class="info-card-title photo-a-color" data-i18n="photoALabel">Изображение A</span>
-            </div>
+          <div class="info-card info-card-a">
+            <div class="info-card-header"><span class="photo-letter">A</span><span class="info-card-title" data-i18n="photoALabel">Изображение A</span><span class="status-dot"></span></div>
             <div class="info-card-body">
-              <img id="thumb-a" class="info-thumb" alt="Thumb A" src="" />
-              <div class="info-meta-group">
-                <div id="info-name-a" class="info-meta-filename">2K.png</div>
-                <div id="info-path-a" class="info-meta-path">C:\Images\2K.png</div>
-                <div class="info-meta-grid">
-                  <div><span class="meta-label" data-i18n="metaResolution">Разрешение:</span> <span id="info-res-a">1920 × 1080</span></div>
-                  <div><span class="meta-label" data-i18n="metaFormat">Формат:</span> <span id="info-fmt-a">PNG</span></div>
-                  <div><span class="meta-label" data-i18n="metaSize">Размер:</span> <span id="info-size-a">2.31 МБ</span></div>
-                  <div><span class="meta-label" data-i18n="metaDate">Дата:</span> <span id="info-date-a">25.07.2024</span></div>
-                </div>
-              </div>
+              <div class="info-preview-row"><img id="thumb-a" class="info-thumb" alt="Thumb A" src="" /><div class="info-meta-group"><div id="info-name-a" class="info-meta-filename">2K.png</div><div id="info-path-a" class="info-meta-path">C:\Images\2K.png</div></div></div>
+              <div class="info-meta-grid"><div><span class="meta-label" data-i18n="metaResolution">Разрешение:</span><span id="info-res-a">1920 × 1080</span></div><div><span class="meta-label" data-i18n="metaFormat">Формат:</span><span id="info-fmt-a">PNG</span></div><div><span class="meta-label" data-i18n="metaSize">Размер:</span><span id="info-size-a">2.31 МБ</span></div><div><span class="meta-label" data-i18n="metaDate">Дата:</span><span id="info-date-a">25.07.2024</span></div></div>
             </div>
           </div>
 
-          <!-- Card Image B -->
-          <div class="info-card">
-            <div class="info-card-header">
-              <span class="info-card-title photo-b-color" data-i18n="photoBLabel">Изображение B</span>
-            </div>
+          <div class="info-card info-card-b">
+            <div class="info-card-header"><span class="photo-letter">B</span><span class="info-card-title" data-i18n="photoBLabel">Изображение B</span><span class="status-dot"></span></div>
             <div class="info-card-body">
-              <img id="thumb-b" class="info-thumb" alt="Thumb B" src="" />
-              <div class="info-meta-group">
-                <div id="info-name-b" class="info-meta-filename">full.png</div>
-                <div id="info-path-b" class="info-meta-path">C:\Images\full.png</div>
-                <div class="info-meta-grid">
-                  <div><span class="meta-label" data-i18n="metaResolution">Разрешение:</span> <span id="info-res-b">1920 × 1080</span></div>
-                  <div><span class="meta-label" data-i18n="metaFormat">Формат:</span> <span id="info-fmt-b">PNG</span></div>
-                  <div><span class="meta-label" data-i18n="metaSize">Размер:</span> <span id="info-size-b">2.89 МБ</span></div>
-                  <div><span class="meta-label" data-i18n="metaDate">Дата:</span> <span id="info-date-b">25.07.2024</span></div>
-                </div>
-              </div>
+              <div class="info-preview-row"><img id="thumb-b" class="info-thumb" alt="Thumb B" src="" /><div class="info-meta-group"><div id="info-name-b" class="info-meta-filename">full.png</div><div id="info-path-b" class="info-meta-path">C:\Images\full.png</div></div></div>
+              <div class="info-meta-grid"><div><span class="meta-label" data-i18n="metaResolution">Разрешение:</span><span id="info-res-b">1920 × 1080</span></div><div><span class="meta-label" data-i18n="metaFormat">Формат:</span><span id="info-fmt-b">PNG</span></div><div><span class="meta-label" data-i18n="metaSize">Размер:</span><span id="info-size-b">2.89 МБ</span></div><div><span class="meta-label" data-i18n="metaDate">Дата:</span><span id="info-date-b">25.07.2024</span></div></div>
             </div>
           </div>
 
-          <!-- Accordions -->
           <div class="accordion-item">
-            <button class="accordion-trigger open" data-target="acc-tools-panel">
-              <span data-i18n="accToolsTitle">ИНСТРУМЕНТЫ И ПОДГОНКА</span>
-              <span class="accordion-arrow">›</span>
-            </button>
+            <button class="accordion-trigger open" data-target="acc-tools-panel"><span data-i18n="accToolsTitle">ИНСТРУМЕНТЫ И ПОДГОНКА</span><span class="accordion-arrow">›</span></button>
             <div class="accordion-content" id="acc-tools-panel">
-              <button id="btn-sidebar-align-b" class="btn-action w-full" data-i18n="alignB" style="width: 100%;">✋ Подгонка B</button>
-              <button id="btn-sidebar-align-a" class="btn-action w-full mt-2" data-i18n="alignA" style="width: 100%; margin-top: 6px;">✋ Подгонка A</button>
-              <button id="btn-sidebar-filenames" class="btn-action w-full mt-2 active" data-i18n="showFilenames" style="width: 100%; margin-top: 6px;">🏷️ Имена файлов</button>
-              
-              <div id="similarity-score-box" class="mt-3" style="margin-top: 10px; background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(99, 102, 241, 0.4); border-radius: 8px; padding: 8px 10px; display: flex; align-items: center; justify-content: space-between;">
-                <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600;" data-i18n="similarityScoreLabel">Сходство кадров:</span>
-                <span id="similarity-score-val" style="font-size: 0.88rem; font-weight: 700; color: #10b981;">—</span>
-              </div>
+              <button id="btn-sidebar-align-b" class="btn-action w-full" data-i18n="alignB"><svg class="icon"><use href="#i-hand"/></svg> Подгонка B</button>
+              <button id="btn-sidebar-align-a" class="btn-action w-full mt-2" data-i18n="alignA"><svg class="icon"><use href="#i-hand"/></svg> Подгонка A</button>
+              <button id="btn-sidebar-filenames" class="btn-action w-full mt-2 active" data-i18n="showFilenames"><svg class="icon"><use href="#i-tag"/></svg> Имена файлов</button>
+              <div id="similarity-score-box" class="similarity-score-box"><span data-i18n="similarityScoreLabel">Сходство кадров:</span><span id="similarity-score-val">—</span></div>
             </div>
           </div>
 
           <div class="accordion-item">
-            <button class="accordion-trigger" data-target="acc-compare-settings">
-              <span data-i18n="accCompareTitle">НАСТРОЙКИ СРАВНЕНИЯ</span>
-              <span class="accordion-arrow">›</span>
-            </button>
+            <button class="accordion-trigger" data-target="acc-compare-settings"><span data-i18n="accCompareTitle">НАСТРОЙКИ СРАВНЕНИЯ</span><span class="accordion-arrow">›</span></button>
             <div class="accordion-content hidden" id="acc-compare-settings">
-              <div class="control-group">
-                <div class="slider-container">
-                  <span class="tool-group-label" data-i18n="opacityLabel">Прозрачность A:</span>
-                  <input type="range" id="opacity-range" min="0" max="500" value="250" class="range-input" style="width: 140px;" />
-                  <span id="opacity-val" class="val-badge">50%</span>
-                </div>
-                <div class="segmented-control mt-2">
-                  <button class="btn-seg" id="btn-fade-0">0%</button>
-                  <button class="btn-seg" id="btn-fade-50">50%</button>
-                  <button class="btn-seg" id="btn-fade-100">100%</button>
-                </div>
-              </div>
-
-              <div class="control-group mt-3">
-                <div class="slider-container" id="scale-a-container">
-                  <span class="tool-group-label" data-i18n="scaleALabel">Размер A:</span>
-                  <input type="range" id="scale-a-range" min="50" max="250" value="100" class="range-input" style="width: 80px;" />
-                  <input type="number" id="scale-a-input" min="0.10" max="5.00" step="0.01" value="1.00" class="number-input" style="width: 55px;" />
-                </div>
-                <div class="slider-container" id="scale-b-container">
-                  <span class="tool-group-label" data-i18n="scaleBLabel">Размер B:</span>
-                  <input type="range" id="scale-b-range" min="50" max="250" value="100" class="range-input" style="width: 80px;" />
-                  <input type="number" id="scale-b-input" min="0.10" max="5.00" step="0.01" value="1.00" class="number-input" style="width: 55px;" />
-                </div>
-              </div>
+              <div class="control-group"><div class="slider-container"><span class="tool-group-label" data-i18n="opacityLabel">Прозрачность A:</span><input type="range" id="opacity-range" min="0" max="500" value="250" class="range-input" /><span id="opacity-val" class="val-badge">50%</span></div><div class="segmented-control mt-2"><button class="btn-seg" id="btn-fade-0">0%</button><button class="btn-seg" id="btn-fade-50">50%</button><button class="btn-seg" id="btn-fade-100">100%</button></div></div>
+              <div class="control-group mt-3"><div class="slider-container" id="scale-a-container"><span class="tool-group-label" data-i18n="scaleALabel">Размер A:</span><input type="range" id="scale-a-range" min="50" max="250" value="100" class="range-input" /><input type="number" id="scale-a-input" min="0.10" max="5.00" step="0.01" value="1.00" class="number-input" /></div><div class="slider-container" id="scale-b-container"><span class="tool-group-label" data-i18n="scaleBLabel">Размер B:</span><input type="range" id="scale-b-range" min="50" max="250" value="100" class="range-input" /><input type="number" id="scale-b-input" min="0.10" max="5.00" step="0.01" value="1.00" class="number-input" /></div></div>
             </div>
           </div>
 
           <div class="accordion-item">
-            <button class="accordion-trigger" data-target="acc-filters">
-              <span data-i18n="accFiltersTitle">ФИЛЬТРЫ И МИГАНИЕ</span>
-              <span class="accordion-arrow">›</span>
-            </button>
+            <button class="accordion-trigger" data-target="acc-filters"><span data-i18n="accFiltersTitle">ФИЛЬТРЫ И МИГАНИЕ</span><span class="accordion-arrow">›</span></button>
             <div class="accordion-content hidden" id="acc-filters">
-              <button id="btn-fade-flash" class="btn-action w-full" data-i18n="flashToggle" style="width: 100%;">⚡ Быстрое мигание</button>
-              <button id="btn-auto-blink" class="btn-action w-full mt-2" data-i18n="autoBlink" style="width: 100%; margin-top: 6px;">⏱️ Авто-мигание</button>
-              
-              <div class="control-group mt-3" style="margin-top: 8px;">
-                <div class="slider-container" style="display: flex; align-items: center; justify-content: space-between;">
-                  <span class="tool-group-label" data-i18n="blinkInterval" style="font-size: 0.75rem;">Интервал (сек):</span>
-                  <div style="display: flex; align-items: center; gap: 4px;">
-                    <input type="range" id="blink-speed-range" min="100" max="3000" step="100" value="1000" class="range-input" style="width: 75px;" />
-                    <input type="number" id="blink-speed-input" min="0.1" max="5.0" step="0.1" value="1.0" class="number-input" style="width: 50px; text-align: center;" />
-                  </div>
-                </div>
-              </div>
-
-              <div class="mt-3" style="margin-top: 8px; border-top: 1px solid var(--border-color); padding-top: 8px;">
-                <button id="btn-toggle-diff" class="btn-action w-full" data-i18n="diffOverlay" style="width: 100%;">🔍 Подсветка разницы (Diff)</button>
-              </div>
+              <button id="btn-fade-flash" class="btn-action w-full" data-i18n="flashToggle"><svg class="icon"><use href="#i-bolt"/></svg> Быстрое мигание</button>
+              <button id="btn-auto-blink" class="btn-action w-full mt-2" data-i18n="autoBlink"><svg class="icon"><use href="#i-clock"/></svg> Авто-мигание</button>
+              <div class="control-group mt-3"><div class="slider-container"><span class="tool-group-label" data-i18n="blinkInterval">Интервал (сек):</span><input type="range" id="blink-speed-range" min="100" max="3000" step="100" value="1000" class="range-input" /><input type="number" id="blink-speed-input" min="0.1" max="5.0" step="0.1" value="1.0" class="number-input" /></div></div>
+              <button id="btn-toggle-diff" class="btn-action w-full diff-button" data-i18n="diffOverlay"><svg class="icon"><use href="#i-diff"/></svg> Подсветка разницы (Diff)</button>
             </div>
           </div>
 
           <div class="accordion-item">
-            <button class="accordion-trigger" data-target="acc-extra">
-              <span data-i18n="accExtraTitle">ДОПОЛНИТЕЛЬНО (EXIF & КАНАЛЫ)</span>
-              <span class="accordion-arrow">›</span>
-            </button>
+            <button class="accordion-trigger" data-target="acc-extra"><span data-i18n="accExtraTitle">ДОПОЛНИТЕЛЬНО (EXIF & КАНАЛЫ)</span><span class="accordion-arrow">›</span></button>
             <div class="accordion-content hidden" id="acc-extra">
-              <div class="sidebar-section-title" data-i18n="colorSpaceTitle" style="margin-top: 0;">ЦВЕТОВОЕ ПРОСТРАНСТВО</div>
-              <div class="info-meta-grid">
-                <div><span class="meta-label" data-i18n="colorProfile">Цветовой профиль:</span> sRGB IEC61966-2.1</div>
-                <div><span class="meta-label" data-i18n="colorDepth">Глубина цвета:</span> 24 бит (8 бит/канал)</div>
-                <div><span class="meta-label" data-i18n="alphaChannel">Альфа-канал:</span> <span data-i18n="supported">Поддерживается</span></div>
-              </div>
-              <div class="sidebar-section-title" data-i18n="exifTitle" style="margin-top: 8px;">EXIF МЕТАДАННЫЕ</div>
-              <div class="info-meta-grid">
-                <div><span class="meta-label" data-i18n="deviceLabel">Камера / Устройство:</span> <span data-i18n="stdImage">Стандартное изображение</span></div>
-                <div><span class="meta-label" data-i18n="dpiLabel">Плотность (DPI):</span> 96 × 96 DPI</div>
-                <div><span class="meta-label" data-i18n="compressionLabel">Сжатие:</span> <span data-i18n="lossless">Без потерь (Lossless)</span></div>
-              </div>
+              <div class="sidebar-section-title" data-i18n="exifTitle">EXIF МЕТАДАННЫЕ</div>
+              <div id="metadata-a" class="metadata-file"><span class="photo-letter">A</span><div class="metadata-content"></div></div>
+              <div id="metadata-b" class="metadata-file"><span class="photo-letter">B</span><div class="metadata-content"></div></div>
             </div>
           </div>
         </div>
       </aside>
     </div>
 
-    <!-- Bottom Upload Panel -->
     <footer class="bottom-upload-panel" id="panel-bottom">
       <button id="btn-collapse-bottom" class="bottom-panel-toggle-btn" title="Свернуть нижнюю панель">⌄</button>
-      
       <div class="bottom-panel-content">
-        <!-- Upload Box A -->
-        <label class="upload-dropzone-box" id="dropzone-a" for="file-input-a">
-          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
-          </svg>
-          <div class="upload-box-text">
-            <div class="upload-box-title" data-i18n="uploadA">Загрузить изображение A</div>
-            <div class="upload-box-hint" data-i18n="dragOrClick">или перетащите файл сюда</div>
+        <div class="upload-pair-group">
+          <label class="upload-dropzone-box dropzone-a" id="dropzone-a" for="file-input-a">
+            <span class="upload-icon"><svg class="icon"><use href="#i-upload"/></svg></span><span class="photo-letter">A</span>
+            <div class="upload-box-text"><div class="upload-box-title" data-i18n="uploadA">Загрузить изображение A</div><div class="upload-box-hint" data-i18n="dragOrClick">или перетащите файл сюда</div></div>
+            <img id="preview-a" class="dropzone-preview hidden" alt="Preview A" />
+          </label>
+          <input type="file" id="file-input-a" accept="image/*,.png,.jpg,.jpeg,.webp,.gif,.bmp,.svg,.ico,.tiff,.heic,.avif" class="file-input" />
+          <button id="btn-swap-bottom" class="btn-swap-round" title="Поменять местами A и B"><svg class="icon"><use href="#i-swap"/></svg></button>
+          <label class="upload-dropzone-box dropzone-b" id="dropzone-b" for="file-input-b">
+            <span class="upload-icon"><svg class="icon"><use href="#i-upload"/></svg></span><span class="photo-letter">B</span>
+            <div class="upload-box-text"><div class="upload-box-title" data-i18n="uploadB">Загрузить изображение B</div><div class="upload-box-hint" data-i18n="dragOrClick">или перетащите файл сюда</div></div>
+            <img id="preview-b" class="dropzone-preview hidden" alt="Preview B" />
+          </label>
+          <input type="file" id="file-input-b" accept="image/*,.png,.jpg,.jpeg,.webp,.gif,.bmp,.svg,.ico,.tiff,.heic,.avif" class="file-input" />
+        </div>
+        <input type="file" id="file-input-pair" accept="image/*,.png,.jpg,.jpeg,.webp,.gif,.bmp,.svg,.ico,.tiff,.heic,.avif" multiple class="file-input" />
+        <div class="bottom-actions">
+          <label id="btn-open-pair" class="btn-bottom-action" for="file-input-pair" title="Выберите сразу 2 файла в папке"><svg class="icon"><use href="#i-folder"/></svg><span data-i18n="openPair">Открыть пару файлов</span></label>
+          <button id="btn-compare-action" class="btn-bottom-action"><svg class="icon"><use href="#i-compare"/></svg><span data-i18n="btnCompare">Сравнить</span></button>
+          <div class="export-dropdown">
+            <button id="btn-export-action" class="btn-bottom-action primary-action" aria-haspopup="menu" aria-expanded="false"><svg class="icon"><use href="#i-export"/></svg><span data-i18n="btnExport">Экспортировать</span><svg class="icon small-icon"><use href="#i-chevron"/></svg></button>
+            <div id="export-menu" class="dropdown-menu export-menu hidden" role="menu"><button class="dropdown-item" data-export="png" role="menuitem">PNG · Lossless</button><button class="dropdown-item" data-export="jpeg" role="menuitem">JPEG · Compact</button></div>
           </div>
-          <img id="preview-a" class="dropzone-preview hidden" alt="Preview A" />
-        </label>
-        <input type="file" id="file-input-a" accept="image/*,.png,.jpg,.jpeg,.webp,.gif,.bmp,.svg,.ico,.tiff,.heic,.avif" style="display:none" />
-
-        <!-- Swap Icon -->
-        <button id="btn-swap-bottom" class="btn-swap-round" title="Поменять местами A и B">⇄</button>
-
-        <!-- Upload Box B -->
-        <label class="upload-dropzone-box" id="dropzone-b" for="file-input-b">
-          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
-          </svg>
-          <div class="upload-box-text">
-            <div class="upload-box-title" data-i18n="uploadB">Загрузить изображение B</div>
-            <div class="upload-box-hint" data-i18n="dragOrClick">или перетащите файл сюда</div>
-          </div>
-          <img id="preview-b" class="dropzone-preview hidden" alt="Preview B" />
-        </label>
-        <input type="file" id="file-input-b" accept="image/*,.png,.jpg,.jpeg,.webp,.gif,.bmp,.svg,.ico,.tiff,.heic,.avif" style="display:none" />
-
-        <!-- Hidden Input for Pair Selection -->
-        <input type="file" id="file-input-pair" accept="image/*,.png,.jpg,.jpeg,.webp,.gif,.bmp,.svg,.ico,.tiff,.heic,.avif" multiple style="display:none" />
-
-        <!-- Single Button for Pair Folder -->
-        <label id="btn-open-pair" class="btn-bottom-action" for="file-input-pair" style="cursor:pointer;" title="Выберите сразу 2 файла в папке">
-          📁 <span data-i18n="openPair">Открыть пару файлов</span>
-        </label>
-
-        <!-- Primary Action Buttons -->
-        <button id="btn-compare-action" class="btn-bottom-action primary-action">
-          📊 <span data-i18n="btnCompare">Сравнить</span>
-        </button>
-        <button id="btn-export-action" class="btn-bottom-action primary-action">
-          📥 <span data-i18n="btnExport">Экспортировать ∨</span>
-        </button>
+        </div>
       </div>
     </footer>
 
-    <!-- Restore Handle for Bottom Panel -->
-    <button id="btn-restore-bottom" class="panel-restore-bottom hidden" title="Развернуть нижнюю панель">📁 Панель загрузки ⌃</button>
+    <button id="btn-restore-bottom" class="panel-restore-bottom hidden" title="Развернуть нижнюю панель"><svg class="icon"><use href="#i-folder"/></svg> Панель загрузки ⌃</button>
 
-    <!-- Help Modal -->
     <div id="help-modal" class="modal-backdrop hidden">
-      <div class="modal-card">
-        <div class="modal-header">
-          <h3 data-i18n="helpTitle">Как сравнивать?</h3>
-          <button id="btn-close-help" class="btn-close">&times;</button>
-        </div>
-        <div class="modal-body">
-          <p data-i18n="helpStep1">1. Загрузите два изображения.</p>
-          <p data-i18n="helpStep2">2. Нажмите 'Ручная подгонка', если нужно совместить сдвинутые детали на фото.</p>
-          <p data-i18n="helpStep3">3. Переключайте режим: Шторка, Наложение или Разделение.</p>
-          <p data-i18n="helpStep4">4. Зумируйте до 1000% колесиком мыши или ползунком.</p>
-        </div>
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="help-title">
+        <div class="modal-header"><div><span class="sidebar-kicker">QUICK START</span><h3 id="help-title" data-i18n="helpTitle">Как сравнивать?</h3></div><button id="btn-close-help" class="btn-close">&times;</button></div>
+        <div class="modal-body"><p data-i18n="helpStep1">1. Загрузите два изображения.</p><p data-i18n="helpStep2">2. Нажмите 'Ручная подгонка', если нужно совместить сдвинутые детали на фото.</p><p data-i18n="helpStep3">3. Переключайте режим: Шторка, Наложение или Разделение.</p><p data-i18n="helpStep4">4. Зумируйте до 1000% колесиком мыши или ползунком.</p></div>
       </div>
     </div>
   </div>
-
   <script type="module" src="./src/app.js"></script>
 </body>
 </html>

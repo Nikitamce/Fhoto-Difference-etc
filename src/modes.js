@@ -5,6 +5,7 @@ export class ModesController {
     this.currentMode = "slider"; // "slider" | "fade" | "split"
 
     this.opacity = 0.5; // for fade mode (0.0 to 1.0)
+    this.blinking = false;
     this.sliderPos = 50; // for slider mode (0 to 100%)
     this.sliderOrientation = "vertical"; // "vertical" (left/right split) | "horizontal" (top/bottom split)
 
@@ -94,11 +95,17 @@ export class ModesController {
     this.render();
   }
 
+  setBlinking(active) {
+    this.blinking = active;
+    this.setOpacity(active ? 0 : 0.5);
+  }
+
   setOpacity(val) {
     this.opacity = Math.max(0, Math.min(1, val));
-    if (this.currentMode === "fade") {
+    if (this.currentMode === "fade" || this.blinking) {
       this.wrapperA.style.opacity = this.opacity;
     }
+    this.wrapperSplitA.style.opacity = this.blinking ? this.opacity : 1;
   }
 
   setSliderPosition(posPercent) {
@@ -192,8 +199,10 @@ export class ModesController {
     }
 
     if (this.currentMode === "split") {
-      this.wrapperSplitA.style.transform = styleA;
-      this.wrapperSplitB.style.transform = styleB;
+      const paneOffset = this.container.clientWidth / 4 - this.container.clientWidth / 2;
+      this.wrapperSplitA.style.transform = `translate3d(${transformA.x + paneOffset}px, ${transformA.y}px, 0) scale(${transformA.scale})`;
+      this.wrapperSplitB.style.transform = `translate3d(${transformB.x + paneOffset}px, ${transformB.y}px, 0) scale(${transformB.scale})`;
+      if (transformB.matrix) this.wrapperSplitB.style.transform += ` ${transformB.matrix}`;
     } else {
       this.wrapperA.style.transform = styleA;
       this.wrapperB.style.transform = styleB;

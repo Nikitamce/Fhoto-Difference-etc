@@ -3,6 +3,8 @@ import { SynchronizedViewer } from "./viewer.js";
 import { ModesController } from "./modes.js";
 import { computeAutoEdgeAlignment } from "./auto_align.js";
 import { loadOpenCV, computeOpenCVAlignment } from "./opencv_align.js";
+import { exportComparison } from "./export.js";
+import { loadMetadata, renderMetadata } from "./metadata.js";
 
 document.addEventListener("DOMContentLoaded", () => {
   // Initialize i18n
@@ -11,7 +13,6 @@ document.addEventListener("DOMContentLoaded", () => {
   // --- 1. DOM Elements & State Variables ---
   const container = document.getElementById("viewer-container");
   const workspace = document.getElementById("workspace");
-  const workspaceEmptyState = document.getElementById("workspace-empty-state");
 
   // State for loaded images
   let imageASrc = null;
@@ -58,6 +59,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const opacityRange = document.getElementById("opacity-range");
   const opacityVal = document.getElementById("opacity-val");
   const btnFadeFlash = document.getElementById("btn-fade-flash");
+  const btnQuickFlash = document.getElementById("btn-quick-flash");
   const btnAutoBlink = document.getElementById("btn-auto-blink");
   const blinkSpeedRange = document.getElementById("blink-speed-range");
   const blinkSpeedInput = document.getElementById("blink-speed-input");
@@ -119,8 +121,10 @@ document.addEventListener("DOMContentLoaded", () => {
       const src = evt.target.result;
       const img = new Image();
       img.onload = () => callback(src, img, file);
+      img.onerror = () => updateStatusHint(i18n.t("invalidFile"));
       img.src = src;
     };
+    reader.onerror = () => updateStatusHint(i18n.t("invalidFile"));
     reader.readAsDataURL(file);
   }
 
@@ -206,21 +210,29 @@ document.addEventListener("DOMContentLoaded", () => {
     modesCtrl.setOpacity(clamped / 500);
   }
 
+  function setFlashUI(active) {
+    btnFadeFlash?.classList.toggle("toggle-active", active);
+    btnQuickFlash?.classList.toggle("active", active);
+    btnQuickFlash?.setAttribute("aria-pressed", String(active));
+  }
+
   function stopAutoBlink() {
     if (isAutoBlinking) {
       clearInterval(autoBlinkInterval);
       isAutoBlinking = false;
       btnAutoBlink?.classList.remove("toggle-active");
+      modesCtrl?.setBlinking(false);
       setOpacityValue(250);
     }
   }
 
   function startAutoBlink() {
     stopAutoBlink();
+    modesCtrl?.setBlinking(true);
     if (isFlashing) {
       clearInterval(flashInterval);
       isFlashing = false;
-      btnFadeFlash?.classList.remove("toggle-active");
+      setFlashUI(false);
     }
 
     isAutoBlinking = true;
@@ -420,29 +432,26 @@ document.addEventListener("DOMContentLoaded", () => {
     toast.id = "status-toast";
     toast.style.cssText = `
       position: fixed;
-      top: 76px;
+      top: 56px;
       left: 50%;
       transform: translateX(-50%);
-      background: rgba(14, 22, 37, 0.94);
-      backdrop-filter: blur(16px);
-      color: #f3f6fc;
-      padding: 8px 15px;
-      min-height: 34px;
-      max-width: min(560px, calc(100vw - 32px));
-      border-radius: 12px;
-      font-size: 0.77rem;
-      font-weight: 550;
-      border: 1px solid rgba(155, 140, 255, 0.38);
-      box-shadow: 0 12px 34px rgba(0, 0, 0, 0.34);
+      background: rgba(17, 24, 39, 0.92);
+      backdrop-filter: blur(10px);
+      color: #f8fafc;
+      padding: 4px 14px;
+      height: 28px;
+      border-radius: 14px;
+      font-size: 0.76rem;
+      font-weight: 500;
+      border: 1px solid rgba(99, 102, 241, 0.5);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
       z-index: 9999;
       white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
       pointer-events: none;
       transition: opacity 0.3s ease;
       display: flex;
       align-items: center;
-      gap: 9px;
+      gap: 8px;
     `;
 
     if (isLoading) {
@@ -451,8 +460,8 @@ document.addEventListener("DOMContentLoaded", () => {
         display: inline-block;
         width: 10px;
         height: 10px;
-        border: 2px solid rgba(155,140,255,0.24);
-        border-top-color: #9b8cff;
+        border: 2px solid rgba(99,102,241,0.3);
+        border-top-color: #6366f1;
         border-radius: 50%;
         animation: spin 0.7s linear infinite;
       `;
@@ -474,217 +483,6 @@ document.addEventListener("DOMContentLoaded", () => {
         toast.style.opacity = "0";
         setTimeout(() => toast.remove(), 300);
       }, 6000);
-    }
-  }
-
-  function drawProjectiveTriangle(ctx, image, source, destination) {
-    const [s0, s1, s2] = source;
-    const [d0, d1, d2] = destination;
-    const sx1 = s1.x - s0.x, sy1 = s1.y - s0.y;
-    const sx2 = s2.x - s0.x, sy2 = s2.y - s0.y;
-    const determinant = sx1 * sy2 - sx2 * sy1;
-    if (Math.abs(determinant) < 1e-8) return;
-
-    const dx1 = d1.x - d0.x, dx2 = d2.x - d0.x;
-    const dy1 = d1.y - d0.y, dy2 = d2.y - d0.y;
-    const a = (dx1 * sy2 - dx2 * sy1) / determinant;
-    const c = (dx2 * sx1 - dx1 * sx2) / determinant;
-    const b = (dy1 * sy2 - dy2 * sy1) / determinant;
-    const d = (dy2 * sx1 - dy1 * sx2) / determinant;
-    const e = d0.x - a * s0.x - c * s0.y;
-    const f = d0.y - b * s0.x - d * s0.y;
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(d0.x, d0.y);
-    ctx.lineTo(d1.x, d1.y);
-    ctx.lineTo(d2.x, d2.y);
-    ctx.closePath();
-    ctx.clip();
-    ctx.transform(a, b, c, d, e, f);
-    ctx.drawImage(image, 0, 0);
-    ctx.restore();
-  }
-
-  function drawTransformedImage(ctx, image, transform) {
-    if (!image || !transform || !image.naturalWidth) return;
-
-    ctx.save();
-    if (!transform.matrix) {
-      ctx.translate(transform.x, transform.y);
-      ctx.scale(transform.scale, transform.scale);
-      ctx.drawImage(image, 0, 0);
-      ctx.restore();
-      return;
-    }
-
-    const matrix3dMatch = transform.matrix.match(/^matrix3d\((.+)\)$/);
-    if (matrix3dMatch) {
-      const matrix = matrix3dMatch[1].split(",").map(Number);
-      if (matrix.length !== 16 || matrix.some(value => !Number.isFinite(value))) {
-        ctx.restore();
-        throw new Error("Unsupported perspective transform");
-      }
-
-      const project = (x, y) => {
-        const w = matrix[3] * x + matrix[7] * y + matrix[15];
-        if (Math.abs(w) < 1e-8) return null;
-        return {
-          x: transform.x + transform.scale * (matrix[0] * x + matrix[4] * y + matrix[12]) / w,
-          y: transform.y + transform.scale * (matrix[1] * x + matrix[5] * y + matrix[13]) / w
-        };
-      };
-
-      const columns = 14, rows = 14;
-      const point = (column, row) => ({
-        x: image.naturalWidth * column / columns,
-        y: image.naturalHeight * row / rows
-      });
-
-      for (let row = 0; row < rows; row++) {
-        for (let column = 0; column < columns; column++) {
-          const x0 = point(column, row);
-          const x1 = point(column + 1, row);
-          const x2 = point(column + 1, row + 1);
-          const x3 = point(column, row + 1);
-
-          const p0 = project(x0.x, x0.y);
-          const p1 = project(x1.x, x1.y);
-          const p2 = project(x2.x, x2.y);
-          const p3 = project(x3.x, x3.y);
-
-          if (p0 && p1 && p2) drawProjectiveTriangle(ctx, image, [x0, x1, x2], [p0, p1, p2]);
-          if (p0 && p2 && p3) drawProjectiveTriangle(ctx, image, [x0, x2, x3], [p0, p2, p3]);
-        }
-      }
-      ctx.restore();
-      return;
-    }
-
-    const matrixMatch = transform.matrix.match(/^matrix\((.+)\)$/);
-    if (matrixMatch) {
-      const values = matrixMatch[1].split(",").map(Number);
-      if (values.length !== 6 || values.some(value => !Number.isFinite(value))) {
-        ctx.restore();
-        throw new Error("Unsupported affine transform");
-      }
-      ctx.translate(transform.x, transform.y);
-      ctx.scale(transform.scale, transform.scale);
-      ctx.transform(...values);
-      ctx.drawImage(image, 0, 0);
-      ctx.restore();
-      return;
-    }
-
-    ctx.restore();
-    throw new Error("Unknown image transform");
-  }
-
-  function drawComparisonSnapshot(ctx, width, height) {
-    const transformA = viewer.getTransformA();
-    const transformB = viewer.getTransformB();
-    const drawA = () => drawTransformedImage(ctx, imgAObj, transformA);
-    const drawB = (offsetX = 0) => drawTransformedImage(ctx, imgBObj, {
-      ...transformB,
-      x: transformB.x + offsetX
-    });
-
-    ctx.fillStyle = "#080d17";
-    ctx.fillRect(0, 0, width, height);
-
-    if (modesCtrl.currentMode === "split") {
-      const divider = width / 2;
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(0, 0, divider, height);
-      ctx.clip();
-      drawA();
-      ctx.restore();
-
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(divider, 0, width - divider, height);
-      ctx.clip();
-      drawB(divider);
-      ctx.restore();
-      return;
-    }
-
-    drawB();
-
-    if (isDiffOverlay) {
-      ctx.save();
-      ctx.globalCompositeOperation = "difference";
-      if ("filter" in ctx) ctx.filter = "contrast(300%) brightness(180%)";
-      drawA();
-      ctx.restore();
-      return;
-    }
-
-    if (modesCtrl.currentMode === "fade") {
-      ctx.save();
-      ctx.globalAlpha = modesCtrl.opacity;
-      drawA();
-      ctx.restore();
-      return;
-    }
-
-    ctx.save();
-    if (modesCtrl.sliderOrientation === "vertical") {
-      ctx.beginPath();
-      ctx.rect(0, 0, width * modesCtrl.sliderPos / 100, height);
-    } else {
-      ctx.beginPath();
-      ctx.rect(0, 0, width, height * modesCtrl.sliderPos / 100);
-    }
-    ctx.clip();
-    drawA();
-    ctx.restore();
-  }
-
-  function exportComparison() {
-    if (!imgAObj || !imgBObj || !viewer || !modesCtrl || !workspace) {
-      updateStatusHint(i18n.t("noImageLoaded"), false);
-      return;
-    }
-
-    const rect = workspace.getBoundingClientRect();
-    const width = Math.max(1, Math.round(rect.width));
-    const height = Math.max(1, Math.round(rect.height));
-    const pixelRatio = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.round(width * pixelRatio);
-    canvas.height = Math.round(height * pixelRatio);
-
-    const ctx = canvas.getContext("2d");
-    if (!ctx) {
-      updateStatusHint(i18n.t("exportError"), false);
-      return;
-    }
-
-    try {
-      ctx.scale(pixelRatio, pixelRatio);
-      drawComparisonSnapshot(ctx, width, height);
-      canvas.toBlob(blob => {
-        if (!blob) {
-          updateStatusHint(i18n.t("exportError"), false);
-          return;
-        }
-
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-        link.href = url;
-        link.download = "PhotoCheck-comparison-" + stamp + ".png";
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
-        updateStatusHint(i18n.t("exportReady"), false);
-      }, "image/png");
-    } catch (error) {
-      console.error("PhotoCheck export error:", error);
-      updateStatusHint(i18n.t("exportError"), false);
     }
   }
 
@@ -714,7 +512,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function checkBothImagesLoaded() {
     if (!modesCtrl || !viewer || !workspace) return;
-    workspaceEmptyState?.classList.toggle("hidden", Boolean(imageASrc || imageBSrc));
+    workspace.classList.toggle("has-images", Boolean(imageASrc || imageBSrc));
     if (imageASrc && imageBSrc) {
       modesCtrl.updateImages(imageASrc, imageBSrc);
       viewer.setImages(imgAObj, imgBObj);
@@ -738,38 +536,43 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  function updateMetadata(slot, file) {
+    const content = document.querySelector(`#metadata-${slot} .metadata-content`);
+    if (!content) return;
+    if (!file) {
+      content.textContent = "—";
+      return;
+    }
+    loadMetadata(file).then((exif) => {
+      if ((slot === "a" ? fileObjA : fileObjB) !== file) return;
+      renderMetadata(content, file, exif, {
+        device: i18n.t("deviceLabel"), lens: i18n.t("lensLabel"), iso: "ISO",
+        aperture: i18n.t("apertureLabel"), exposure: i18n.t("exposureLabel"),
+        dpi: i18n.t("dpiLabel"), colorSpace: i18n.t("colorProfile"), captured: i18n.t("capturedLabel"),
+        unavailable: i18n.t("unavailable"), noExif: i18n.t("noExif")
+      });
+    });
+  }
+
   function updateRightSidebarInfo() {
-    const thumbA = document.getElementById("thumb-a");
-    const infoNameA = document.getElementById("info-name-a");
-    const infoPathA = document.getElementById("info-path-a");
-    const infoResA = document.getElementById("info-res-a");
-    const infoFmtA = document.getElementById("info-fmt-a");
-    const infoSizeA = document.getElementById("info-size-a");
-    const infoDateA = document.getElementById("info-date-a");
-
-    if (imageASrc && thumbA) thumbA.src = imageASrc;
-    if (infoNameA) infoNameA.textContent = filenameA || "Изображение A";
-    if (infoPathA) infoPathA.textContent = fileObjA ? (fileObjA.path && fileObjA.path !== fileObjA.name ? fileObjA.path : "Источник: Файл") : "Источник: Буфер обмена";
-    if (infoResA && imgAObj) infoResA.textContent = `${imgAObj.naturalWidth} × ${imgAObj.naturalHeight}`;
-    if (infoFmtA && fileObjA) infoFmtA.textContent = fileObjA.type ? fileObjA.type.split("/")[1]?.toUpperCase() : "PNG";
-    if (infoSizeA && fileObjA) infoSizeA.textContent = `${(fileObjA.size / (1024 * 1024)).toFixed(2)} МБ`;
-    if (infoDateA && fileObjA) infoDateA.textContent = new Date(fileObjA.lastModified || Date.now()).toLocaleDateString("ru-RU");
-
-    const thumbB = document.getElementById("thumb-b");
-    const infoNameB = document.getElementById("info-name-b");
-    const infoPathB = document.getElementById("info-path-b");
-    const infoResB = document.getElementById("info-res-b");
-    const infoFmtB = document.getElementById("info-fmt-b");
-    const infoSizeB = document.getElementById("info-size-b");
-    const infoDateB = document.getElementById("info-date-b");
-
-    if (imageBSrc && thumbB) thumbB.src = imageBSrc;
-    if (infoNameB) infoNameB.textContent = filenameB || "Изображение B";
-    if (infoPathB) infoPathB.textContent = fileObjB ? (fileObjB.path && fileObjB.path !== fileObjB.name ? fileObjB.path : "Источник: Файл") : "Источник: Буфер обмена";
-    if (infoResB && imgBObj) infoResB.textContent = `${imgBObj.naturalWidth} × ${imgBObj.naturalHeight}`;
-    if (infoFmtB && fileObjB) infoFmtB.textContent = fileObjB.type ? fileObjB.type.split("/")[1]?.toUpperCase() : "PNG";
-    if (infoSizeB && fileObjB) infoSizeB.textContent = `${(fileObjB.size / (1024 * 1024)).toFixed(2)} МБ`;
-    if (infoDateB && fileObjB) infoDateB.textContent = new Date(fileObjB.lastModified || Date.now()).toLocaleDateString("ru-RU");
+    for (const [slot, src, file, img, name] of [["a", imageASrc, fileObjA, imgAObj, filenameA], ["b", imageBSrc, fileObjB, imgBObj, filenameB]]) {
+      const set = (field, value) => {
+        const element = document.getElementById(`info-${field}-${slot}`);
+        if (element) element.textContent = value;
+      };
+      const thumb = document.getElementById(`thumb-${slot}`);
+      if (thumb) {
+        if (src) thumb.src = src;
+        else thumb.removeAttribute("src");
+      }
+      set("name", file ? name : "—");
+      set("path", file ? i18n.t("localFile") : "—");
+      set("res", img ? `${img.naturalWidth} × ${img.naturalHeight}` : "—");
+      set("fmt", file?.type ? file.type.split("/")[1]?.toUpperCase() : "—");
+      set("size", file ? `${(file.size / (1024 * 1024)).toFixed(2)} MB` : "—");
+      set("date", file ? new Date(file.lastModified || Date.now()).toLocaleDateString(i18n.lang) : "—");
+      updateMetadata(slot, file);
+    }
   }
 
   function setupDropzone(boxId, inputId, previewId, callback) {
@@ -831,6 +634,11 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   modesCtrl = new ModesController(viewer, container);
+  updateRightSidebarInfo();
+  if (window.matchMedia("(max-width: 900px)").matches) {
+    toggleLeftPanel(true);
+    toggleRightPanel(true);
+  }
 
   const resizeObserver = new ResizeObserver(() => {
     if (workspace && imgAObj && viewer) {
@@ -1030,40 +838,6 @@ document.addEventListener("DOMContentLoaded", () => {
     modesCtrl.setMode(mode);
   });
 
-  document.getElementById("btn-compare-action")?.addEventListener("click", () => {
-    if (!imgAObj || !imgBObj || !viewer || !modesCtrl) {
-      updateStatusHint(i18n.t("noImageLoaded"), false);
-      return;
-    }
-
-    stopAutoBlink();
-    if (isFlashing) {
-      clearInterval(flashInterval);
-      isFlashing = false;
-      btnFadeFlash?.classList.remove("toggle-active");
-      setOpacityValue(250);
-    }
-
-    isDiffOverlay = false;
-    btnToggleDiff?.classList.remove("primary-tool", "active");
-    container?.classList.remove("diff-mode");
-    cancelPointMode();
-    viewer.setAlignTarget("none");
-    updateAlignButtonsUI();
-
-    modeSelector?.querySelectorAll(".btn-seg[data-mode]").forEach(button => {
-      button.classList.toggle("active", button.dataset.mode === "slider");
-    });
-    groupSliderControls?.classList.remove("hidden");
-    modesCtrl.setMode("slider");
-
-    const rect = workspace.getBoundingClientRect();
-    viewer.centerBoth(rect.width, rect.height);
-    updateScaleAUI();
-    updateScaleBUI();
-    updateStatusHint(i18n.t("compareReady"), false);
-  });
-
   opacityRange?.addEventListener("input", (e) => {
     setOpacityValue(parseInt(e.target.value, 10));
   });
@@ -1072,23 +846,28 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btn-fade-50")?.addEventListener("click", () => setOpacityValue(250));
   document.getElementById("btn-fade-100")?.addEventListener("click", () => setOpacityValue(500));
 
-  btnFadeFlash?.addEventListener("click", () => {
+  const toggleFlash = () => {
     if (isFlashing) {
       clearInterval(flashInterval);
       isFlashing = false;
-      btnFadeFlash.classList.remove("toggle-active");
+      setFlashUI(false);
+      modesCtrl?.setBlinking(false);
       setOpacityValue(250);
     } else {
       stopAutoBlink();
       isFlashing = true;
-      btnFadeFlash.classList.add("toggle-active");
+      modesCtrl?.setBlinking(true);
+      setFlashUI(true);
       let state = false;
       flashInterval = setInterval(() => {
         state = !state;
         setOpacityValue(state ? 500 : 0);
       }, 150);
     }
-  });
+  };
+
+  btnFadeFlash?.addEventListener("click", toggleFlash);
+  btnQuickFlash?.addEventListener("click", toggleFlash);
 
   blinkSpeedRange?.addEventListener("input", (e) => {
     updateBlinkSpeed(parseInt(e.target.value, 10));
@@ -1451,7 +1230,39 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  document.getElementById("btn-export-action")?.addEventListener("click", exportComparison);
+  document.addEventListener("languageChanged", updateRightSidebarInfo);
+
+  document.getElementById("btn-compare-action")?.addEventListener("click", () => {
+    if (!imgAObj || !imgBObj) {
+      updateStatusHint(i18n.t("noImageLoaded"));
+      return;
+    }
+    btnAutoEdge?.click();
+  });
+
+  const exportButton = document.getElementById("btn-export-action");
+  const exportMenu = document.getElementById("export-menu");
+  exportButton?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    exportMenu?.classList.toggle("hidden");
+    exportButton.setAttribute("aria-expanded", String(!exportMenu?.classList.contains("hidden")));
+  });
+  exportMenu?.addEventListener("click", async (e) => {
+    const button = e.target.closest("[data-export]");
+    if (!button) return;
+    exportMenu.classList.add("hidden");
+    exportButton?.setAttribute("aria-expanded", "false");
+    try {
+      await exportComparison({ viewer, modes: modesCtrl, imgA: imgAObj, imgB: imgBObj, workspace, format: button.dataset.export });
+      updateStatusHint(i18n.t("exportSuccess"));
+    } catch (error) {
+      updateStatusHint(i18n.t(error.message === "loadBoth" ? "noImageLoaded" : error.message === "perspective" ? "exportPerspective" : "exportError"));
+    }
+  });
+  window.addEventListener("click", () => {
+    exportMenu?.classList.add("hidden");
+    exportButton?.setAttribute("aria-expanded", "false");
+  });
 
   const helpModal = document.getElementById("help-modal");
   document.getElementById("btn-help")?.addEventListener("click", () => {

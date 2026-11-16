@@ -54,7 +54,7 @@ npm run dev
 ```bash
 npm run build
 ```
-Готовый файл будет создан в `dist/index.html`. Скопируйте `dist/index.html` в `PhotoCheck_Portable.html`.
+Готовый файл создаётся в `dist/index.html` и автоматически копируется в `PhotoCheck_Portable.html`. Проверки геометрии запускаются командой `npm test`.
 
 ---
 

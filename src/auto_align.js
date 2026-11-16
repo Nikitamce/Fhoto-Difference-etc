@@ -126,18 +126,7 @@ export function computeAutoEdgeAlignment(imgA, imgB) {
     }
   }
 
-  // Fallback to center fit if confidence is too low (< 10%)
-  if (bestFineScore < 0.10) {
-    const defaultScale = parseFloat(baseScaleB.toFixed(4));
-    const defaultOffsetX = parseFloat(((wA - wB * defaultScale) / 2).toFixed(2));
-    const defaultOffsetY = parseFloat(((hA - hB * defaultScale) / 2).toFixed(2));
-    return {
-      scaleRatioB: defaultScale,
-      offsetX: defaultOffsetX,
-      offsetY: defaultOffsetY,
-      confidence: 50
-    };
-  }
+  if (bestFineScore < 0.10) return null;
 
   // Convert refined shift to Image B's required positioning offset
   // (Invert sign because if feature in B is at y+dy, B must be shifted by -dy to align with A)

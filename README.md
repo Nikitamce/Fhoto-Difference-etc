@@ -54,7 +54,7 @@ To bundle the application into a single standalone HTML file:
 ```bash
 npm run build
 ```
-The output will be created in `dist/index.html`. Copy `dist/index.html` to `PhotoCheck_Portable.html`.
+The output is created in `dist/index.html` and automatically copied to `PhotoCheck_Portable.html`. Run `npm test` to execute the geometry tests.
 
 ---
 

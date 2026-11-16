@@ -100,10 +100,7 @@ const translations = {
     dragOrClick: "или перетащите файл сюда",
     openPair: "Открыть пару файлов",
     btnCompare: "Сравнить",
-    btnExport: "Скачать PNG",
-    compareReady: "Режим сравнения готов",
-    exportReady: "Снимок сравнения сохранён в PNG",
-    exportError: "Не удалось создать PNG-файл",
+    btnExport: "Экспортировать ∨",
     cancel: "Отмена",
 
     // Manual alignment
@@ -115,6 +112,15 @@ const translations = {
     noImageLoaded: "Загрузите обе фотографии для начала сравнения",
     imagesLoaded: "Изображения загружены и отцентрированы",
     invalidFile: "Пожалуйста, выберите файл изображения (JPG, PNG, WEBP и др.)",
+    emptyTitle: "Найдите разницу в деталях",
+    emptyText: "Загрузите два изображения в панели ниже или перетащите их в рабочую область",
+    alignmentDescription: "Совместите кадры для точного сравнения деталей",
+    localFile: "Локальный файл",
+    exportSuccess: "Сравнение экспортировано",
+    exportError: "Не удалось экспортировать изображение",
+    exportPerspective: "Экспорт перспективного преобразования пока не поддерживается",
+    lensLabel: "Объектив:", apertureLabel: "Диафрагма:", exposureLabel: "Выдержка:", capturedLabel: "Дата съёмки:",
+    unavailable: "Не указано", noExif: "EXIF-данные не найдены",
     
     // Quick Help
     helpTitle: "Как сравнивать?",
@@ -224,10 +230,7 @@ const translations = {
     dragOrClick: "or drag & drop file here",
     openPair: "Open Pair of Files",
     btnCompare: "Compare",
-    btnExport: "Export PNG",
-    compareReady: "Comparison view is ready",
-    exportReady: "Comparison snapshot saved as PNG",
-    exportError: "Could not create the PNG file",
+    btnExport: "Export ∨",
     cancel: "Cancel",
 
     // Manual alignment
@@ -239,6 +242,15 @@ const translations = {
     noImageLoaded: "Load both photos to start comparison",
     imagesLoaded: "Images loaded and centered",
     invalidFile: "Please select an image file (JPG, PNG, WEBP, etc.)",
+    emptyTitle: "Find every difference",
+    emptyText: "Load two images below or drag them into the workspace",
+    alignmentDescription: "Align the frames for a precise detail comparison",
+    localFile: "Local file",
+    exportSuccess: "Comparison exported",
+    exportError: "Could not export the image",
+    exportPerspective: "Exporting perspective transforms is not supported yet",
+    lensLabel: "Lens:", apertureLabel: "Aperture:", exposureLabel: "Exposure:", capturedLabel: "Captured:",
+    unavailable: "Not specified", noExif: "No EXIF data found",
     
     // Quick Help
     helpTitle: "How to compare?",
@@ -273,11 +285,14 @@ class I18nManager {
   }
 
   updateUI() {
+    document.documentElement.lang = this.currentLang;
     document.querySelectorAll("[data-i18n]").forEach(el => {
       const key = el.getAttribute("data-i18n");
       const text = this.t(key);
       if (el.tagName === "INPUT" && el.type === "placeholder") {
         el.placeholder = text;
+      } else if (el.querySelector("svg") && el.lastElementChild?.tagName === "SPAN") {
+        el.lastElementChild.innerText = text;
       } else {
         el.innerText = text;
       }
