@@ -474,6 +474,217 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  function drawProjectiveTriangle(ctx, image, source, destination) {
+    const [s0, s1, s2] = source;
+    const [d0, d1, d2] = destination;
+    const sx1 = s1.x - s0.x, sy1 = s1.y - s0.y;
+    const sx2 = s2.x - s0.x, sy2 = s2.y - s0.y;
+    const determinant = sx1 * sy2 - sx2 * sy1;
+    if (Math.abs(determinant) < 1e-8) return;
+
+    const dx1 = d1.x - d0.x, dx2 = d2.x - d0.x;
+    const dy1 = d1.y - d0.y, dy2 = d2.y - d0.y;
+    const a = (dx1 * sy2 - dx2 * sy1) / determinant;
+    const c = (dx2 * sx1 - dx1 * sx2) / determinant;
+    const b = (dy1 * sy2 - dy2 * sy1) / determinant;
+    const d = (dy2 * sx1 - dy1 * sx2) / determinant;
+    const e = d0.x - a * s0.x - c * s0.y;
+    const f = d0.y - b * s0.x - d * s0.y;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(d0.x, d0.y);
+    ctx.lineTo(d1.x, d1.y);
+    ctx.lineTo(d2.x, d2.y);
+    ctx.closePath();
+    ctx.clip();
+    ctx.transform(a, b, c, d, e, f);
+    ctx.drawImage(image, 0, 0);
+    ctx.restore();
+  }
+
+  function drawTransformedImage(ctx, image, transform) {
+    if (!image || !transform || !image.naturalWidth) return;
+
+    ctx.save();
+    if (!transform.matrix) {
+      ctx.translate(transform.x, transform.y);
+      ctx.scale(transform.scale, transform.scale);
+      ctx.drawImage(image, 0, 0);
+      ctx.restore();
+      return;
+    }
+
+    const matrix3dMatch = transform.matrix.match(/^matrix3d\((.+)\)$/);
+    if (matrix3dMatch) {
+      const matrix = matrix3dMatch[1].split(",").map(Number);
+      if (matrix.length !== 16 || matrix.some(value => !Number.isFinite(value))) {
+        ctx.restore();
+        throw new Error("Unsupported perspective transform");
+      }
+
+      const project = (x, y) => {
+        const w = matrix[3] * x + matrix[7] * y + matrix[15];
+        if (Math.abs(w) < 1e-8) return null;
+        return {
+          x: transform.x + transform.scale * (matrix[0] * x + matrix[4] * y + matrix[12]) / w,
+          y: transform.y + transform.scale * (matrix[1] * x + matrix[5] * y + matrix[13]) / w
+        };
+      };
+
+      const columns = 14, rows = 14;
+      const point = (column, row) => ({
+        x: image.naturalWidth * column / columns,
+        y: image.naturalHeight * row / rows
+      });
+
+      for (let row = 0; row < rows; row++) {
+        for (let column = 0; column < columns; column++) {
+          const x0 = point(column, row);
+          const x1 = point(column + 1, row);
+          const x2 = point(column + 1, row + 1);
+          const x3 = point(column, row + 1);
+
+          const p0 = project(x0.x, x0.y);
+          const p1 = project(x1.x, x1.y);
+          const p2 = project(x2.x, x2.y);
+          const p3 = project(x3.x, x3.y);
+
+          if (p0 && p1 && p2) drawProjectiveTriangle(ctx, image, [x0, x1, x2], [p0, p1, p2]);
+          if (p0 && p2 && p3) drawProjectiveTriangle(ctx, image, [x0, x2, x3], [p0, p2, p3]);
+        }
+      }
+      ctx.restore();
+      return;
+    }
+
+    const matrixMatch = transform.matrix.match(/^matrix\((.+)\)$/);
+    if (matrixMatch) {
+      const values = matrixMatch[1].split(",").map(Number);
+      if (values.length !== 6 || values.some(value => !Number.isFinite(value))) {
+        ctx.restore();
+        throw new Error("Unsupported affine transform");
+      }
+      ctx.translate(transform.x, transform.y);
+      ctx.scale(transform.scale, transform.scale);
+      ctx.transform(...values);
+      ctx.drawImage(image, 0, 0);
+      ctx.restore();
+      return;
+    }
+
+    ctx.restore();
+    throw new Error("Unknown image transform");
+  }
+
+  function drawComparisonSnapshot(ctx, width, height) {
+    const transformA = viewer.getTransformA();
+    const transformB = viewer.getTransformB();
+    const drawA = () => drawTransformedImage(ctx, imgAObj, transformA);
+    const drawB = (offsetX = 0) => drawTransformedImage(ctx, imgBObj, {
+      ...transformB,
+      x: transformB.x + offsetX
+    });
+
+    ctx.fillStyle = "#080d17";
+    ctx.fillRect(0, 0, width, height);
+
+    if (modesCtrl.currentMode === "split") {
+      const divider = width / 2;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, divider, height);
+      ctx.clip();
+      drawA();
+      ctx.restore();
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(divider, 0, width - divider, height);
+      ctx.clip();
+      drawB(divider);
+      ctx.restore();
+      return;
+    }
+
+    drawB();
+
+    if (isDiffOverlay) {
+      ctx.save();
+      ctx.globalCompositeOperation = "difference";
+      if ("filter" in ctx) ctx.filter = "contrast(300%) brightness(180%)";
+      drawA();
+      ctx.restore();
+      return;
+    }
+
+    if (modesCtrl.currentMode === "fade") {
+      ctx.save();
+      ctx.globalAlpha = modesCtrl.opacity;
+      drawA();
+      ctx.restore();
+      return;
+    }
+
+    ctx.save();
+    if (modesCtrl.sliderOrientation === "vertical") {
+      ctx.beginPath();
+      ctx.rect(0, 0, width * modesCtrl.sliderPos / 100, height);
+    } else {
+      ctx.beginPath();
+      ctx.rect(0, 0, width, height * modesCtrl.sliderPos / 100);
+    }
+    ctx.clip();
+    drawA();
+    ctx.restore();
+  }
+
+  function exportComparison() {
+    if (!imgAObj || !imgBObj || !viewer || !modesCtrl || !workspace) {
+      updateStatusHint(i18n.t("noImageLoaded"), false);
+      return;
+    }
+
+    const rect = workspace.getBoundingClientRect();
+    const width = Math.max(1, Math.round(rect.width));
+    const height = Math.max(1, Math.round(rect.height));
+    const pixelRatio = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(width * pixelRatio);
+    canvas.height = Math.round(height * pixelRatio);
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      updateStatusHint(i18n.t("exportError"), false);
+      return;
+    }
+
+    try {
+      ctx.scale(pixelRatio, pixelRatio);
+      drawComparisonSnapshot(ctx, width, height);
+      canvas.toBlob(blob => {
+        if (!blob) {
+          updateStatusHint(i18n.t("exportError"), false);
+          return;
+        }
+
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+        link.href = url;
+        link.download = "PhotoCheck-comparison-" + stamp + ".png";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        updateStatusHint(i18n.t("exportReady"), false);
+      }, "image/png");
+    } catch (error) {
+      console.error("PhotoCheck export error:", error);
+      updateStatusHint(i18n.t("exportError"), false);
+    }
+  }
+
   function handleSwap() {
     if (!viewer || !modesCtrl) return;
     viewer.swapImages();
@@ -814,6 +1025,38 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     modesCtrl.setMode(mode);
+  });
+
+  document.getElementById("btn-compare-action")?.addEventListener("click", () => {
+    if (!imgAObj || !imgBObj || !viewer || !modesCtrl) {
+      updateStatusHint(i18n.t("noImageLoaded"), false);
+      return;
+    }
+
+    stopAutoBlink();
+    if (isFlashing) {
+      clearInterval(flashInterval);
+      isFlashing = false;
+      btnFadeFlash?.classList.remove("toggle-active");
+      setOpacityValue(250);
+    }
+
+    isDiffOverlay = false;
+    btnToggleDiff?.classList.remove("primary-tool", "active");
+    container?.classList.remove("diff-mode");
+    viewer.setAlignTarget("none");
+
+    modeSelector?.querySelectorAll(".btn-seg[data-mode]").forEach(button => {
+      button.classList.toggle("active", button.dataset.mode === "slider");
+    });
+    groupSliderControls?.classList.remove("hidden");
+    modesCtrl.setMode("slider");
+
+    const rect = workspace.getBoundingClientRect();
+    viewer.centerBoth(rect.width, rect.height);
+    updateScaleAUI();
+    updateScaleBUI();
+    updateStatusHint(i18n.t("compareReady"), false);
   });
 
   opacityRange?.addEventListener("input", (e) => {
@@ -1202,6 +1445,8 @@ document.addEventListener("DOMContentLoaded", () => {
       langDropdownMenu?.classList.add("hidden");
     });
   });
+
+  document.getElementById("btn-export-action")?.addEventListener("click", exportComparison);
 
   const helpModal = document.getElementById("help-modal");
   document.getElementById("btn-help")?.addEventListener("click", () => {
