@@ -11,6 +11,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // --- 1. DOM Elements & State Variables ---
   const container = document.getElementById("viewer-container");
   const workspace = document.getElementById("workspace");
+  const workspaceEmptyState = document.getElementById("workspace-empty-state");
 
   // State for loaded images
   let imageASrc = null;
@@ -499,6 +500,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function checkBothImagesLoaded() {
     if (!modesCtrl || !viewer || !workspace) return;
+    workspaceEmptyState?.classList.toggle("hidden", Boolean(imageASrc && imageBSrc));
     if (imageASrc && imageBSrc) {
       modesCtrl.updateImages(imageASrc, imageBSrc);
       viewer.setImages(imgAObj, imgBObj);
