@@ -1,3 +1,5 @@
+import "@fontsource-variable/inter";
+import "@fontsource-variable/jetbrains-mono";
 import { i18n } from "./i18n.js";
 import { settings } from "./settings.js";
 import { SynchronizedViewer } from "./viewer.js";
@@ -37,6 +39,8 @@ const state = {
 
   isFlashing: false,
   opacityBeforeFlash: 0.5,
+  opacityBeforeBlink: 0.5,
+  uiMode: "slider", // "slider" | "fade" | "split" | "diff" | "blink"
   isBlinking: false,
   blinkIntervalId: null,
   blinkMs: 1000,
@@ -70,6 +74,8 @@ function cacheDOM() {
     "panel-bottom",
     "mode-selector",
     "group-slider-controls",
+    "group-blink-controls",
+    "btn-header-blink-toggle",
     "btn-slider-vertical",
     "btn-slider-horizontal",
     "btn-zoom-out",
@@ -112,10 +118,17 @@ function cacheDOM() {
     "empty-pick-a",
     "empty-pick-b",
     "btn-load-demo",
+    "missing-slot-prompt",
+    "btn-pick-missing-slot",
+    "missing-slot-badge",
+    "missing-slot-title",
+    "missing-slot-hint",
     "filename-badge-a",
     "badge-name-a",
+    "badge-res-a",
     "filename-badge-b",
     "badge-name-b",
+    "badge-res-b",
     "point-align-banner",
     "point-align-instruction",
     "btn-undo-point",
@@ -206,6 +219,39 @@ function cacheDOM() {
     "btn-swap-bottom",
     "btn-compare-action",
     "btn-export-action",
+    "btn-header-export",
+    "mode-params-section",
+    "mode-params-heading",
+    "mode-hint-slider",
+    "mode-hint-split",
+    "acc-blend-panel",
+    "acc-blink-panel",
+    "blink-frame-pill",
+    "acc-diff-panel",
+    "nudge-step-label",
+    "point-progress-dots",
+    "global-drop-overlay",
+    "help-shortcut-search",
+    "help-shortcuts-list",
+    "setting-toggle-glass",
+    "setting-toggle-quickbar",
+    "setting-toggle-autohide-hud",
+    "setting-toggle-modestrip",
+    "setting-default-diff-gain",
+    "setting-default-diff-gain-val",
+    "workspace-bottom-hover-zone",
+    "workspace-bottom-hud",
+    "mode-bottom-strip",
+    "strip-fade-controls",
+    "strip-blink-controls",
+    "strip-opacity-range",
+    "strip-opacity-val",
+    "btn-strip-flash",
+    "btn-strip-blink-toggle",
+    "strip-blink-frame",
+    "strip-blink-range",
+    "strip-blink-val",
+    "acc-meta-panel",
     "lang-popover",
     "zoom-popover",
     "export-popover",
@@ -213,6 +259,7 @@ function cacheDOM() {
     "btn-close-settings",
     "theme-system-resolved",
     "setting-toggle-probe",
+    "setting-toggle-filenames",
     "setting-toggle-autohide-badges",
     "setting-toggle-autometrics",
     "btn-reset-settings",
@@ -250,13 +297,23 @@ function dismissToast(id) {
   setTimeout(() => toast.remove(), 240);
 }
 
-function showToast(message, { duration = 2600, spinner = false, id = null } = {}) {
+function getToastIconSvg(type) {
+  const paths = {
+    success: '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/>',
+    warning: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+    danger: '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>',
+    info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
+  };
+  const d = paths[type] || paths.info;
+  return `<svg class="i toast-icon" viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
+}
+
+function showToast(message, { duration = 2500, spinner = false, id = null, type = "info" } = {}) {
   if (!dom.toastRegion) return null;
   const key = id || `toast-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
   let toast = id ? activeToasts.get(id) : null;
   if (!toast) {
-    // Keep at most 2 visible toasts to avoid clutter
     if (activeToasts.size >= 2) {
       const oldestKey = activeToasts.keys().next().value;
       if (oldestKey) dismissToast(oldestKey);
@@ -269,6 +326,7 @@ function showToast(message, { duration = 2600, spinner = false, id = null } = {}
   }
 
   toast.classList.remove("closing");
+  toast.dataset.type = spinner ? "info" : type;
   if (toast._timer) clearTimeout(toast._timer);
 
   toast.innerHTML = "";
@@ -277,6 +335,8 @@ function showToast(message, { duration = 2600, spinner = false, id = null } = {}
     sp.className = "toast-spinner";
     sp.setAttribute("aria-hidden", "true");
     toast.appendChild(sp);
+  } else {
+    toast.insertAdjacentHTML("beforeend", getToastIconSvg(type));
   }
   const textSpan = document.createElement("span");
   textSpan.textContent = message;
@@ -295,9 +355,14 @@ function showToast(message, { duration = 2600, spinner = false, id = null } = {}
    ============================================================================ */
 function syncRangeVars(input) {
   if (!input) return;
-  input.style.setProperty("--attr-min", input.min === "" ? "0" : input.min);
-  input.style.setProperty("--attr-max", input.max === "" ? "100" : input.max);
+  const min = Number(input.min === "" ? "0" : input.min);
+  const max = Number(input.max === "" ? "100" : input.max);
+  const val = Number(input.value || 0);
+  const pct = max > min ? ((val - min) / (max - min)) * 100 : 0;
+  input.style.setProperty("--attr-min", String(min));
+  input.style.setProperty("--attr-max", String(max));
   input.style.setProperty("--control-value", input.value);
+  input.style.setProperty("--p", `${Math.max(0, Math.min(100, pct))}%`);
 }
 
 function initAllRanges() {
@@ -310,7 +375,7 @@ function initAllRanges() {
 function supportsTopLayerExit() {
   return Boolean(
     window.CSS?.supports?.("overlay", "auto") &&
-      window.CSS?.supports?.("transition-behavior", "allow-discrete")
+    window.CSS?.supports?.("transition-behavior", "allow-discrete")
   );
 }
 
@@ -386,20 +451,28 @@ function setupDialogEnhancements(dialog, openBtn, closeBtn) {
   }
 }
 
+let lastPopoverTrigger = null;
+
 function setupPopoverFallback(popoverEl, anchorEl, preferredSide = "bottom-end") {
   if (!popoverEl || !anchorEl) return;
-  if (window.CSS?.supports?.("position-area", "block-end")) return;
 
   popoverEl.addEventListener("beforetoggle", (e) => {
     if (e.newState !== "open") return;
+    const activeAnchor = (lastPopoverTrigger && document.body.contains(lastPopoverTrigger)) ? lastPopoverTrigger : anchorEl;
+    if (window.CSS?.supports?.("position-area", "block-end") && (popoverEl.id !== "export-popover" || activeAnchor === dom.btnHeaderExport)) {
+      popoverEl.style.position = "";
+      popoverEl.style.inset = "";
+      popoverEl.style.top = "";
+      popoverEl.style.left = "";
+      popoverEl.style.positionAnchor = "";
+      return;
+    }
     requestAnimationFrame(() => {
-      const ar = anchorEl.getBoundingClientRect();
+      const ar = activeAnchor.getBoundingClientRect();
       const pr = popoverEl.getBoundingClientRect();
-      const gap = 6;
-      let top =
-        preferredSide.startsWith("top")
-          ? ar.top - pr.height - gap
-          : ar.bottom + gap;
+      const gap = 8;
+      const openBelow = ar.top < window.innerHeight / 2;
+      let top = openBelow ? ar.bottom + gap : ar.top - pr.height - gap;
       let left =
         preferredSide.endsWith("start")
           ? ar.left
@@ -411,6 +484,7 @@ function setupPopoverFallback(popoverEl, anchorEl, preferredSide = "bottom-end")
       }
       left = Math.max(8, Math.min(window.innerWidth - pr.width - 8, left));
 
+      popoverEl.style.positionAnchor = "none";
       popoverEl.style.position = "fixed";
       popoverEl.style.inset = "auto";
       popoverEl.style.margin = "0";
@@ -437,7 +511,7 @@ document.addEventListener("DOMContentLoaded", () => {
   modesCtrl.diffStyle = settings.get("defaultDiffMode");
   modesCtrl.diffGain = settings.get("diffGain");
   modesCtrl.setImageRenderingPref(settings.get("imageRendering"));
-  modesCtrl.onCurtainChange = () => {};
+  modesCtrl.onCurtainChange = () => { };
 
   bindHeaderAndModes();
   bindZoomControls();
@@ -456,15 +530,29 @@ document.addEventListener("DOMContentLoaded", () => {
 
   syncSettingsUI();
   syncPanelCollapsedState();
+  if (window.innerWidth < 1024) {
+    if (dom.panelLeft && !dom.panelLeft.classList.contains("collapsed")) toggleDock("left");
+    if (dom.panelRight && !dom.panelRight.classList.contains("collapsed")) toggleDock("right");
+  }
+  toggleQuickBar(!settings.get("showQuickBar"));
   applyModeSelection("slider");
   setLayerTarget("none");
   updateOpacityUI(modesCtrl.opacity);
   updateDiffUI();
+  state.showFilenames = settings.get("showFilenameBadges") !== false;
   updateSyncToggleUI();
   updateFilenamesToggleUI();
   updateProbeVisibility();
   updateOffsetReadout();
   updateScaleUI();
+  updateNudgeStepLabel();
+  initBottomHudAutoHide();
+  initMetaMarqueeObserver();
+
+  window.addEventListener("resize", () => {
+    updateModeIndicator();
+    refreshMetaMarquee();
+  });
 });
 
 function handleViewerStateChange() {
@@ -488,6 +576,14 @@ function bindHeaderAndModes() {
 
   dom.btnSliderHorizontal?.addEventListener("click", () => {
     setCurtainOrientation("horizontal");
+  });
+
+  dom.btnHeaderBlinkToggle?.addEventListener("click", toggleAutoBlink);
+
+  document.querySelectorAll(".blink-speed-preset[data-blink-ms]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      setBlinkIntervalMs(Number(btn.dataset.blinkMs));
+    });
   });
 
   const toggleLeft = () => toggleDock("left");
@@ -533,8 +629,28 @@ function syncPanelCollapsedState() {
   );
 }
 
+function updateModeIndicator() {
+  const indicator = dom.modeSelector?.querySelector(".seg-indicator");
+  const activeBtn = dom.modeSelector?.querySelector(".seg-btn.active");
+  if (!indicator || !activeBtn) return;
+  indicator.style.left = `${activeBtn.offsetLeft}px`;
+  indicator.style.width = `${activeBtn.offsetWidth}px`;
+}
+
 function applyModeSelection(mode) {
-  modesCtrl.setMode(mode);
+  const wasBlink = state.uiMode === "blink";
+  state.uiMode = mode;
+
+  if (wasBlink && mode !== "blink") {
+    stopAutoBlink();
+    if (mode === "fade") {
+      modesCtrl.setOpacity(state.opacityBeforeBlink);
+      updateOpacityUI(state.opacityBeforeBlink);
+    }
+  }
+
+  const engineMode = mode === "blink" ? "fade" : mode;
+  modesCtrl.setMode(engineMode);
 
   dom.modeSelector?.querySelectorAll(".seg-btn[data-mode]").forEach((btn) => {
     const isActive = btn.dataset.mode === mode;
@@ -542,10 +658,40 @@ function applyModeSelection(mode) {
     btn.setAttribute("aria-pressed", String(isActive));
   });
 
-  if (dom.groupSliderControls) {
-    const isSlider = mode === "slider";
-    dom.groupSliderControls.style.opacity = isSlider ? "1" : "0.4";
-    dom.groupSliderControls.style.pointerEvents = isSlider ? "auto" : "none";
+  requestAnimationFrame(updateModeIndicator);
+
+  dom.groupSliderControls?.classList.toggle("hidden", mode !== "slider");
+  dom.groupBlinkControls?.classList.toggle("hidden", mode !== "blink");
+
+  // Contextual mode parameters in right inspector
+  dom.accBlendPanel?.classList.toggle("hidden", mode !== "fade");
+  dom.accBlinkPanel?.classList.toggle("hidden", mode !== "blink");
+  dom.accDiffPanel?.classList.toggle("hidden", mode !== "diff");
+  dom.modeHintSlider?.classList.toggle("hidden", mode !== "slider");
+  dom.modeHintSplit?.classList.toggle("hidden", mode !== "split");
+
+  updateModeBottomStripVisibility();
+
+  if (dom.modeParamsHeading) {
+    const headingKey =
+      mode === "fade"
+        ? "accBlendTitle"
+        : mode === "blink"
+          ? "accBlinkTitle"
+          : mode === "diff"
+            ? "accDiffTitle"
+            : mode === "split"
+              ? "modeSplit"
+              : "modeSlider";
+    dom.modeParamsHeading.setAttribute("data-i18n", headingKey);
+    dom.modeParamsHeading.textContent = i18n.t(headingKey);
+  }
+
+  if (mode === "blink" && !wasBlink) {
+    state.opacityBeforeBlink = modesCtrl.opacity;
+    if (state.imgA || state.imgB) {
+      startAutoBlink();
+    }
   }
 
   if (state.pointModeCount > 0) {
@@ -788,25 +934,32 @@ function updateScaleUI() {
 async function runAutoEdgeAlignment() {
   if (!ensureBothImages()) return;
   const toastId = showToast(i18n.t("autoEdgeRunning"), { spinner: true, duration: 0, id: "auto-edge" });
+  dom.btnAutoEdge?.classList.add("is-loading");
+  if (dom.btnAutoEdge) dom.btnAutoEdge.disabled = true;
 
-  // Yield briefly so spinner paints before Sobel/ZNCC calculation
-  await new Promise((r) => setTimeout(r, 25));
+  try {
+    // Yield briefly so spinner paints before Sobel/ZNCC calculation
+    await new Promise((r) => setTimeout(r, 25));
 
-  viewer.clearTransformMatrix();
-  const res = computeAutoEdgeAlignment(state.imgA, state.imgB);
-  dismissToast(toastId);
+    viewer.clearTransformMatrix();
+    const res = computeAutoEdgeAlignment(state.imgA, state.imgB);
+    dismissToast(toastId);
 
-  if (res) {
-    viewer.scaleRatioB = res.scaleRatioB;
-    viewer.offsetX = res.offsetX;
-    viewer.offsetY = res.offsetY;
-    viewer.onStateChange();
-    updateScaleUI();
-    scheduleMetricsRecalc();
-    const score = Math.max(0, Math.min(100, Math.round(res.confidence || 0)));
-    showToast(i18n.t("autoEdgeSuccess", { score }), { duration: 3000 });
-  } else {
-    showToast(i18n.t("autoEdgeFail"), { duration: 2800 });
+    if (res) {
+      viewer.scaleRatioB = res.scaleRatioB;
+      viewer.offsetX = res.offsetX;
+      viewer.offsetY = res.offsetY;
+      viewer.onStateChange();
+      updateScaleUI();
+      scheduleMetricsRecalc();
+      const score = Math.max(0, Math.min(100, Math.round(res.confidence || 0)));
+      showToast(i18n.t("autoEdgeSuccess", { score }), { duration: 3000, type: "success" });
+    } else {
+      showToast(i18n.t("autoEdgeFail"), { duration: 2800, type: "warning" });
+    }
+  } finally {
+    dom.btnAutoEdge?.classList.remove("is-loading");
+    if (dom.btnAutoEdge) dom.btnAutoEdge.disabled = false;
   }
 }
 
@@ -825,6 +978,9 @@ async function runOpenCVAlignment() {
     showToast(msg, { spinner: true, duration: 0, id: "opencv-status" });
   };
 
+  dom.btnAutoOpencv?.classList.add("is-loading");
+  if (dom.btnAutoOpencv) dom.btnAutoOpencv.disabled = true;
+
   try {
     await loadOpenCV(onStatus, msgs);
     const matrix = await computeOpenCVAlignment(state.imgA, state.imgB, onStatus, msgs);
@@ -837,11 +993,14 @@ async function runOpenCVAlignment() {
     viewer.onStateChange();
     updateScaleUI();
     scheduleMetricsRecalc();
-    showToast(i18n.t("opencvSuccess"), { duration: 3000 });
+    showToast(i18n.t("opencvSuccess"), { duration: 3000, type: "success" });
   } catch (err) {
     dismissToast("opencv-status");
     const errText = err?.message || String(err);
-    showToast(i18n.t("opencvError", { err: errText }), { duration: 4000 });
+    showToast(i18n.t("opencvError", { err: errText }), { duration: 4000, type: "danger" });
+  } finally {
+    dom.btnAutoOpencv?.classList.remove("is-loading");
+    if (dom.btnAutoOpencv) dom.btnAutoOpencv.disabled = false;
   }
 }
 
@@ -907,15 +1066,24 @@ function updatePointBanner() {
   }
 
   dom.pointAlignBanner.classList.remove("hidden");
-  let key;
-  if (n === 1) {
-    key = state.pointsA.length === 0 ? "alignPoint1A" : "alignPoint1B";
-  } else if (state.pointsA.length < n) {
-    key = `alignPointA${state.pointsA.length + 1}`;
-  } else {
-    key = `alignPointB${state.pointsB.length + 1}`;
+  const pickingB = state.pointsA.length >= n;
+  const slot = pickingB ? "B" : "A";
+  const curr = pickingB ? state.pointsB.length + 1 : state.pointsA.length + 1;
+  dom.pointAlignInstruction.textContent = i18n.t("pointBannerStep", { curr, total: n, slot });
+
+  if (dom.pointProgressDots) {
+    const totalDots = n * 2;
+    const filledDots = state.pointsA.length + state.pointsB.length;
+    dom.pointProgressDots.innerHTML = "";
+    for (let i = 0; i < totalDots; i++) {
+      const dot = document.createElement("span");
+      const isB = i >= n;
+      dot.className = `progress-dot ${isB ? "dot-b" : "dot-a"}`;
+      if (i < filledDots) dot.classList.add("filled");
+      else if (i === filledDots) dot.classList.add("current");
+      dom.pointProgressDots.appendChild(dot);
+    }
   }
-  dom.pointAlignInstruction.textContent = i18n.t(key);
 }
 
 function handlePointPickClick(e) {
@@ -1146,40 +1314,73 @@ function bindWorkspaceInteractions() {
     { passive: false }
   );
 
-  // Empty state actions
+  // Empty state & contextual missing-slot actions
   dom.emptyPickA?.addEventListener("click", () => dom.fileInputA?.click());
   dom.emptyPickB?.addEventListener("click", () => dom.fileInputB?.click());
   dom.btnLoadDemo?.addEventListener("click", loadDemoPair);
+  dom.btnPickMissingSlot?.addEventListener("click", () => {
+    const slot = dom.missingSlotPrompt?.dataset.slot === "A" ? "A" : "B";
+    if (slot === "A") dom.fileInputA?.click();
+    else dom.fileInputB?.click();
+  });
 
-  // Global drag and drop onto workspace / window
-  const dropZoneTarget = dom.workspace;
-  if (dropZoneTarget) {
-    ["dragenter", "dragover"].forEach((evt) => {
-      dropZoneTarget.addEventListener(evt, (e) => {
-        e.preventDefault();
-        dropZoneTarget.classList.add("drag-active");
-      });
-    });
-    ["dragleave", "drop"].forEach((evt) => {
-      dropZoneTarget.addEventListener(evt, (e) => {
-        e.preventDefault();
-        dropZoneTarget.classList.remove("drag-active");
-      });
-    });
-    dropZoneTarget.addEventListener("drop", async (e) => {
-      const files = [...(e.dataTransfer?.files || [])].filter(isSupportedImageFile);
-      if (files.length === 0) {
-        if (e.dataTransfer?.files?.length) showToast(i18n.t("invalidFile"));
-        return;
-      }
-      if (files.length >= 2) {
-        await Promise.all([loadImageFile("A", files[0]), loadImageFile("B", files[1])]);
-      } else {
-        const slot = !state.imgA ? "A" : "B";
-        await loadImageFile(slot, files[0]);
-      }
-    });
-  }
+  // Global drag and drop onto window with split A/B overlay
+  let globalDragDepth = 0;
+  const dropOverlay = dom.globalDropOverlay;
+  const halfA = dropOverlay?.querySelector('[data-drop-slot="A"]');
+  const halfB = dropOverlay?.querySelector('[data-drop-slot="B"]');
+
+  const hasDraggedFiles = (e) =>
+    Array.from(e.dataTransfer?.types || []).includes("Files");
+
+  const hideGlobalDrop = () => {
+    globalDragDepth = 0;
+    dropOverlay?.classList.add("hidden");
+    halfA?.classList.remove("active");
+    halfB?.classList.remove("active");
+    dom.workspace?.classList.remove("drag-active");
+  };
+
+  window.addEventListener("dragenter", (e) => {
+    if (!hasDraggedFiles(e)) return;
+    e.preventDefault();
+    globalDragDepth += 1;
+    dropOverlay?.classList.remove("hidden");
+    dom.workspace?.classList.add("drag-active");
+  });
+
+  window.addEventListener("dragover", (e) => {
+    if (!hasDraggedFiles(e)) return;
+    e.preventDefault();
+    const isLeft = e.clientX < window.innerWidth / 2;
+    halfA?.classList.toggle("active", isLeft);
+    halfB?.classList.toggle("active", !isLeft);
+  });
+
+  window.addEventListener("dragleave", (e) => {
+    if (!hasDraggedFiles(e)) return;
+    globalDragDepth = Math.max(0, globalDragDepth - 1);
+    if (globalDragDepth === 0) hideGlobalDrop();
+  });
+
+  window.addEventListener("drop", async (e) => {
+    if (!hasDraggedFiles(e)) return;
+    e.preventDefault();
+    const dropSlot = e.clientX < window.innerWidth / 2 ? "A" : "B";
+    hideGlobalDrop();
+    if (e.target.closest("#dropzone-a, #dropzone-b")) return;
+
+    const files = [...(e.dataTransfer?.files || [])].filter(isSupportedImageFile);
+    if (files.length === 0) {
+      if (e.dataTransfer?.files?.length) showToast(i18n.t("invalidFile"), { type: "warning" });
+      return;
+    }
+    if (files.length >= 2) {
+      await Promise.all([loadImageFile("A", files[0]), loadImageFile("B", files[1])]);
+    } else {
+      await loadImageFile(dropSlot, files[0]);
+    }
+  });
 
   // Clipboard paste (Ctrl+V)
   window.addEventListener("paste", async (e) => {
@@ -1198,11 +1399,12 @@ function bindWorkspaceInteractions() {
         loadImageFile("A", imageFiles[0], i18n.t("sourceClipboard")),
         loadImageFile("B", imageFiles[1], i18n.t("sourceClipboard")),
       ]);
+      showToast(i18n.t("pasteLoadedBoth"), { type: "success" });
     } else {
       const slot = !state.imgA ? "A" : "B";
       await loadImageFile(slot, imageFiles[0], i18n.t("sourceClipboard"));
+      showToast(i18n.t(slot === "A" ? "pasteLoadedA" : "pasteLoadedB"), { type: "success" });
     }
-    showToast(i18n.t("pasteLoaded"));
   });
 
   // Floating Quick Bar controls
@@ -1215,7 +1417,9 @@ function bindWorkspaceInteractions() {
   });
   dom.btnSidebarFilenames?.addEventListener("click", () => {
     state.showFilenames = !state.showFilenames;
+    settings.set("showFilenameBadges", state.showFilenames);
     updateFilenamesToggleUI();
+    syncSettingsUI();
   });
   dom.btnToggleProbe?.addEventListener("click", () => {
     settings.set("pixelProbe", !settings.get("pixelProbe"));
@@ -1358,7 +1562,7 @@ function bindRightInspector() {
     const val = Number(dom.opacityRange.value) / 500;
     modesCtrl.setOpacity(val);
     updateOpacityUI(val);
-    if (modesCtrl.currentMode !== "fade") applyModeSelection("fade");
+    if (state.uiMode !== "fade") applyModeSelection("fade");
   });
 
   const fadePresets = [
@@ -1372,17 +1576,43 @@ function bindRightInspector() {
     btn?.addEventListener("click", () => {
       modesCtrl.setOpacity(val);
       updateOpacityUI(val);
-      if (modesCtrl.currentMode !== "fade") applyModeSelection("fade");
+      if (state.uiMode !== "fade") applyModeSelection("fade");
     });
   }
 
   // Fast flash & auto-blink
-  dom.btnFadeFlash?.addEventListener("click", () => {
+  const triggerFastFlash = () => {
     if (!state.imgA && !state.imgB) return;
-    if (modesCtrl.currentMode !== "fade") applyModeSelection("fade");
+    if (state.uiMode !== "fade") applyModeSelection("fade");
     const nextOpacity = modesCtrl.opacity > 0.5 ? 0 : 1;
     modesCtrl.setOpacity(nextOpacity);
     updateOpacityUI(nextOpacity);
+  };
+
+  dom.btnFadeFlash?.addEventListener("click", triggerFastFlash);
+  dom.btnStripFlash?.addEventListener("click", triggerFastFlash);
+
+  // Bottom Mode Strip sync controls
+  dom.stripOpacityRange?.addEventListener("input", () => {
+    const val = Number(dom.stripOpacityRange.value) / 500;
+    modesCtrl.setOpacity(val);
+    updateOpacityUI(val);
+    if (state.uiMode !== "fade") applyModeSelection("fade");
+  });
+
+  document.querySelectorAll("[data-strip-fade]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const val = Number(btn.dataset.stripFade);
+      modesCtrl.setOpacity(val);
+      updateOpacityUI(val);
+      if (state.uiMode !== "fade") applyModeSelection("fade");
+    });
+  });
+
+  dom.btnStripBlinkToggle?.addEventListener("click", toggleAutoBlink);
+
+  dom.stripBlinkRange?.addEventListener("input", () => {
+    setBlinkIntervalMs(Number(dom.stripBlinkRange.value));
   });
 
   dom.btnAutoBlink?.addEventListener("click", toggleAutoBlink);
@@ -1427,9 +1657,14 @@ function bindRightInspector() {
 function updateOpacityUI(opacity) {
   const pct = (opacity * 100).toFixed(1);
   if (dom.opacityVal) dom.opacityVal.textContent = `${pct}%`;
+  if (dom.stripOpacityVal) dom.stripOpacityVal.textContent = `${pct}%`;
   if (dom.opacityRange) {
     dom.opacityRange.value = String(Math.round(opacity * 500));
     syncRangeVars(dom.opacityRange);
+  }
+  if (dom.stripOpacityRange) {
+    dom.stripOpacityRange.value = String(Math.round(opacity * 500));
+    syncRangeVars(dom.stripOpacityRange);
   }
   const presets = [
     [dom.btnFade0, 0],
@@ -1441,6 +1676,61 @@ function updateOpacityUI(opacity) {
   for (const [btn, val] of presets) {
     btn?.classList.toggle("active", Math.abs(opacity - val) < 0.015);
   }
+  document.querySelectorAll("[data-strip-fade]").forEach((btn) => {
+    const val = Number(btn.dataset.stripFade);
+    btn.classList.toggle("active", Math.abs(opacity - val) < 0.015);
+  });
+
+  const isA = opacity > 0.5;
+  if (dom.blinkFramePill) {
+    dom.blinkFramePill.textContent = isA ? "A" : "B";
+    dom.blinkFramePill.dataset.frame = isA ? "A" : "B";
+  }
+  if (dom.stripBlinkFrame) {
+    dom.stripBlinkFrame.textContent = isA ? "A" : "B";
+    dom.stripBlinkFrame.dataset.frame = isA ? "A" : "B";
+  }
+}
+
+function updateBlinkButtonsUI() {
+  const active = state.isBlinking;
+  dom.btnAutoBlink?.classList.toggle("active", active);
+  dom.btnAutoBlink?.setAttribute("aria-pressed", String(active));
+  const labelEl = dom.btnAutoBlink?.querySelector("span");
+  if (labelEl && state.uiMode === "blink") {
+    const key = active ? "blinkPause" : "blinkResume";
+    labelEl.setAttribute("data-i18n", key);
+    labelEl.textContent = i18n.t(key);
+  }
+  const pausePlayIcon = active
+    ? '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect width="4" height="14" x="6" y="5" rx="1"/><rect width="4" height="14" x="14" y="5" rx="1"/></svg>'
+    : '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3"/></svg>';
+  if (dom.btnHeaderBlinkToggle) {
+    dom.btnHeaderBlinkToggle.classList.toggle("active", active);
+    dom.btnHeaderBlinkToggle.setAttribute("aria-pressed", String(active));
+    dom.btnHeaderBlinkToggle.innerHTML = pausePlayIcon;
+  }
+  if (dom.btnStripBlinkToggle) {
+    dom.btnStripBlinkToggle.classList.toggle("active", active);
+    dom.btnStripBlinkToggle.setAttribute("aria-pressed", String(active));
+    const key = active ? "blinkPause" : "blinkResume";
+    dom.btnStripBlinkToggle.innerHTML = `${pausePlayIcon}<span data-i18n="${key}">${i18n.t(key)}</span>`;
+  }
+}
+
+function startAutoBlink() {
+  if (!state.imgA && !state.imgB) return;
+  if (state.uiMode !== "blink") {
+    applyModeSelection("blink");
+    return;
+  }
+  state.isBlinking = true;
+  if (modesCtrl.opacity > 0.05 && modesCtrl.opacity < 0.95) {
+    modesCtrl.setOpacity(1);
+    updateOpacityUI(1);
+  }
+  updateBlinkButtonsUI();
+  runBlinkTimer();
 }
 
 function toggleAutoBlink() {
@@ -1449,11 +1739,7 @@ function toggleAutoBlink() {
     stopAutoBlink();
     return;
   }
-  if (modesCtrl.currentMode !== "fade") applyModeSelection("fade");
-  state.isBlinking = true;
-  dom.btnAutoBlink?.classList.add("active");
-  dom.btnAutoBlink?.setAttribute("aria-pressed", "true");
-  runBlinkTimer();
+  startAutoBlink();
 }
 
 function stopAutoBlink() {
@@ -1462,8 +1748,7 @@ function stopAutoBlink() {
     clearInterval(state.blinkIntervalId);
     state.blinkIntervalId = null;
   }
-  dom.btnAutoBlink?.classList.remove("active");
-  dom.btnAutoBlink?.setAttribute("aria-pressed", "false");
+  updateBlinkButtonsUI();
 }
 
 function runBlinkTimer() {
@@ -1481,10 +1766,115 @@ function setBlinkIntervalMs(ms) {
     dom.blinkSpeedRange.value = String(Math.min(3000, state.blinkMs));
     syncRangeVars(dom.blinkSpeedRange);
   }
-  if (dom.blinkSpeedInput) {
-    dom.blinkSpeedInput.value = (state.blinkMs / 1000).toFixed(1);
+  if (dom.stripBlinkRange) {
+    dom.stripBlinkRange.value = String(Math.min(3000, state.blinkMs));
+    syncRangeVars(dom.stripBlinkRange);
   }
+  const secStr = (state.blinkMs / 1000).toFixed(1);
+  if (dom.blinkSpeedInput) {
+    dom.blinkSpeedInput.value = secStr;
+  }
+  if (dom.stripBlinkVal) {
+    dom.stripBlinkVal.textContent = `${secStr}s`;
+  }
+  document.querySelectorAll(".blink-speed-preset[data-blink-ms]").forEach((btn) => {
+    btn.classList.toggle("active", Number(btn.dataset.blinkMs) === state.blinkMs);
+  });
   if (state.isBlinking) runBlinkTimer();
+}
+
+function updateModeBottomStripVisibility() {
+  const enabled = settings.get("showModeBottomStrip") !== false;
+  const mode = state.uiMode;
+  const showStrip = enabled && (mode === "fade" || mode === "blink");
+  dom.modeBottomStrip?.classList.toggle("hidden", !showStrip);
+  dom.stripFadeControls?.classList.toggle("hidden", mode !== "fade");
+  dom.stripBlinkControls?.classList.toggle("hidden", mode !== "blink");
+}
+
+let bottomHudHideTimer = null;
+let bottomHudInteracting = false;
+
+function setBottomHudHidden(hidden) {
+  dom.workspaceBottomHud?.classList.toggle("auto-hidden", hidden);
+  dom.workspaceBottomHoverZone?.classList.toggle("hint-visible", hidden);
+}
+
+function resetBottomHudAutoHideTimer() {
+  if (bottomHudHideTimer) {
+    clearTimeout(bottomHudHideTimer);
+    bottomHudHideTimer = null;
+  }
+  const enabled = settings.get("autoHideBottomHud") !== false;
+  const hasImages = Boolean(state.imgA || state.imgB);
+  if (!enabled || !hasImages) {
+    setBottomHudHidden(false);
+    return;
+  }
+  if (bottomHudInteracting || dom.zoomPopover?.matches(":popover-open")) {
+    return;
+  }
+  bottomHudHideTimer = setTimeout(() => {
+    if (!bottomHudInteracting && !dom.zoomPopover?.matches(":popover-open")) {
+      setBottomHudHidden(true);
+    }
+  }, 3000);
+}
+
+function revealBottomHudAndScheduleHide() {
+  setBottomHudHidden(false);
+  resetBottomHudAutoHideTimer();
+}
+
+function initBottomHudAutoHide() {
+  const hud = dom.workspaceBottomHud;
+  const ws = dom.workspace;
+  if (!hud || !ws) return;
+
+  hud.addEventListener("pointerenter", () => {
+    bottomHudInteracting = true;
+    setBottomHudHidden(false);
+    if (bottomHudHideTimer) clearTimeout(bottomHudHideTimer);
+  });
+
+  hud.addEventListener("pointerleave", () => {
+    bottomHudInteracting = false;
+    resetBottomHudAutoHideTimer();
+  });
+
+  hud.addEventListener("pointerdown", () => {
+    bottomHudInteracting = true;
+    setBottomHudHidden(false);
+    if (bottomHudHideTimer) clearTimeout(bottomHudHideTimer);
+  });
+
+  window.addEventListener("pointerup", () => {
+    if (bottomHudInteracting && !hud.matches(":hover")) {
+      bottomHudInteracting = false;
+      resetBottomHudAutoHideTimer();
+    }
+  });
+
+  ws.addEventListener("pointermove", (e) => {
+    if (settings.get("autoHideBottomHud") === false) return;
+    if (!state.imgA && !state.imgB) return;
+    const rect = ws.getBoundingClientRect();
+    const distFromBottom = rect.bottom - e.clientY;
+    if (distFromBottom >= 0 && distFromBottom <= 76) {
+      revealBottomHudAndScheduleHide();
+    }
+  });
+
+  ws.addEventListener("pointerleave", () => {
+    bottomHudInteracting = false;
+    resetBottomHudAutoHideTimer();
+  });
+
+  dom.zoomPopover?.addEventListener("toggle", () => {
+    resetBottomHudAutoHideTimer();
+  });
+
+  resetBottomHudAutoHideTimer();
 }
 
 function updateDiffUI() {
@@ -1615,7 +2005,25 @@ function bindBottomDock() {
     e.target.value = "";
   });
 
-  dom.btnSwapBottom?.addEventListener("click", swapImagesAndState);
+  dom.btnSwapBottom?.addEventListener("click", () => {
+    dom.btnSwapBottom.classList.remove("is-swapping");
+    void dom.btnSwapBottom.offsetWidth;
+    dom.btnSwapBottom.classList.add("is-swapping");
+    swapImagesAndState();
+  });
+
+  dom.btnHeaderExport?.addEventListener("click", () => {
+    lastPopoverTrigger = dom.btnHeaderExport;
+  });
+  dom.btnExportAction?.addEventListener("click", () => {
+    lastPopoverTrigger = dom.btnExportAction;
+  });
+  dom.langDropdownBtn?.addEventListener("click", () => {
+    lastPopoverTrigger = dom.langDropdownBtn;
+  });
+  dom.btnZoomPresets?.addEventListener("click", () => {
+    lastPopoverTrigger = dom.btnZoomPresets;
+  });
 
   dom.btnCompareAction?.addEventListener("click", async () => {
     if (!ensureBothImages()) return;
@@ -1640,13 +2048,14 @@ function bindBottomDock() {
           diffStyle: modesCtrl.diffStyle,
         });
         if (res?.copied) {
-          showToast(i18n.t("exportCopied"));
+          showToast(i18n.t("exportCopied"), { type: "success" });
         } else if (res?.filename) {
-          showToast(i18n.t("exportSuccess", { file: res.filename }));
+          showToast(i18n.t("exportSuccess", { file: res.filename }), { type: "success" });
         }
       } catch (err) {
         showToast(i18n.t("exportError", { err: err?.message || String(err) }), {
           duration: 3800,
+          type: "danger",
         });
       }
     });
@@ -1734,6 +2143,36 @@ function onImagesUpdated() {
     updateScaleUI();
     scheduleMetricsRecalc();
   }
+
+  if (hasAny && state.uiMode === "blink" && !state.isBlinking) {
+    startAutoBlink();
+  }
+  updateMissingSlotPrompt();
+  resetBottomHudAutoHideTimer();
+}
+
+function updateMissingSlotPrompt() {
+  if (!dom.missingSlotPrompt) return;
+  const hasA = Boolean(state.imgA);
+  const hasB = Boolean(state.imgB);
+  const showSingle = hasA !== hasB;
+  dom.missingSlotPrompt.classList.toggle("hidden", !showSingle);
+  if (!showSingle) return;
+
+  const missing = hasA ? "B" : "A";
+  dom.missingSlotPrompt.dataset.slot = missing;
+  if (dom.missingSlotBadge) {
+    dom.missingSlotBadge.textContent = missing;
+    dom.missingSlotBadge.className = `slot-badge slot-badge-${missing.toLowerCase()}`;
+  }
+  if (dom.missingSlotTitle) {
+    const key = missing === "A" ? "uploadA" : "uploadB";
+    dom.missingSlotTitle.setAttribute("data-i18n", key);
+    dom.missingSlotTitle.textContent = i18n.t(key);
+  }
+  if (dom.missingSlotHint) {
+    dom.missingSlotHint.textContent = i18n.t("dragOrClick");
+  }
 }
 
 function swapImagesAndState() {
@@ -1753,6 +2192,7 @@ function swapImagesAndState() {
   updateScaleUI();
   refreshAllImageUI();
   updateFilenamesToggleUI();
+  updateMissingSlotPrompt();
   scheduleMetricsRecalc();
 }
 
@@ -1760,6 +2200,12 @@ function refreshAllImageUI() {
   updateSlotUI("A", state.fileA, state.urlA, state.metaA, state.sourceHintA);
   updateSlotUI("B", state.fileB, state.urlB, state.metaB, state.sourceHintB);
   updateExtendedMetadataTable();
+}
+
+function truncateMiddleFilename(name, maxLen = 23) {
+  if (!name || name.length <= maxLen) return name || "";
+  const half = Math.floor((maxLen - 3) / 2);
+  return `${name.slice(0, half)}...${name.slice(-half)}`;
 }
 
 function updateSlotUI(slot, file, url, meta, sourceHint) {
@@ -1775,20 +2221,30 @@ function updateSlotUI(slot, file, url, meta, sourceHint) {
   const dzTitle = dom[`dropzoneTitle${slot}`];
   const dzHint = dom[`dropzoneHint${slot}`];
   const badgeName = dom[`badgeName${slot}`];
+  const badgeRes = dom[`badgeRes${slot}`];
+  const badgeBox = dom[`filenameBadge${slot}`];
 
   if (!meta || !file || !url) {
     thumb?.classList.add("hidden");
     placeholder?.classList.remove("hidden");
-    if (infoName) infoName.textContent = i18n.t("notLoadedYet");
+    if (infoName) {
+      infoName.textContent = i18n.t("notLoadedYet");
+      infoName.removeAttribute("title");
+    }
     if (infoPath) infoPath.textContent = "—";
     if (infoRes) infoRes.textContent = "—";
     if (infoFmt) infoFmt.textContent = "—";
     if (infoSize) infoSize.textContent = "—";
     if (infoDate) infoDate.textContent = "—";
     preview?.classList.add("hidden");
-    if (dzTitle) dzTitle.textContent = i18n.t(slot === "A" ? "uploadA" : "uploadB");
+    if (dzTitle) {
+      dzTitle.textContent = i18n.t(slot === "A" ? "uploadA" : "uploadB");
+      dzTitle.removeAttribute("title");
+    }
     if (dzHint) dzHint.textContent = i18n.t("dragOrClick");
     if (badgeName) badgeName.textContent = "";
+    if (badgeRes) badgeRes.textContent = "";
+    badgeBox?.removeAttribute("data-fullname");
     return;
   }
 
@@ -1805,7 +2261,10 @@ function updateSlotUI(slot, file, url, meta, sourceHint) {
     ? new Date(file.lastModified).toLocaleDateString(i18n.lang === "en" ? "en-US" : "ru-RU")
     : "—";
 
-  if (infoName) infoName.textContent = name;
+  if (infoName) {
+    infoName.textContent = name;
+    infoName.title = name;
+  }
   if (infoPath) {
     infoPath.textContent =
       sourceHint ||
@@ -1821,9 +2280,53 @@ function updateSlotUI(slot, file, url, meta, sourceHint) {
     preview.src = url;
     preview.classList.remove("hidden");
   }
-  if (dzTitle) dzTitle.textContent = name;
+  if (dzTitle) {
+    dzTitle.textContent = name;
+    dzTitle.title = name;
+  }
   if (dzHint) dzHint.textContent = `${resText} • ${sizeText}`;
-  if (badgeName) badgeName.textContent = name;
+  if (badgeName) badgeName.textContent = truncateMiddleFilename(name, 23);
+  if (badgeRes) badgeRes.textContent = `• ${meta.width}×${meta.height}`;
+  badgeBox?.setAttribute("data-fullname", name);
+}
+
+function setMetaCellText(el, text) {
+  if (!el) return;
+  const val = String(text ?? "—");
+  el.title = val;
+  el.classList.remove("is-overflowing");
+  el.style.removeProperty("--scroll-x");
+  el.innerHTML = "";
+  const track = document.createElement("span");
+  track.className = "meta-v-track";
+  track.textContent = val;
+  el.appendChild(track);
+}
+
+function refreshMetaMarquee() {
+  requestAnimationFrame(() => {
+    document.querySelectorAll(".meta-v").forEach((el) => {
+      const track = el.querySelector(".meta-v-track");
+      if (!track) return;
+      el.classList.remove("is-overflowing");
+      el.style.removeProperty("--scroll-x");
+      const diff = track.scrollWidth - el.clientWidth;
+      if (el.clientWidth > 0 && diff > 2) {
+        el.classList.add("is-overflowing");
+        el.style.setProperty("--scroll-x", `-${diff + 6}px`);
+      }
+    });
+  });
+}
+
+function initMetaMarqueeObserver() {
+  const metaDetails = dom.accMetaPanel?.closest("details");
+  metaDetails?.addEventListener("toggle", () => {
+    if (metaDetails.open) refreshMetaMarquee();
+  });
+  dom.panelRight?.addEventListener("transitionend", () => {
+    refreshMetaMarquee();
+  });
 }
 
 function updateExtendedMetadataTable() {
@@ -1839,21 +2342,21 @@ function updateExtendedMetadataTable() {
 
     if (!meta) {
       for (const el of [aspect, alpha, depth, profile, dpi, comp, cam, exp]) {
-        if (el) el.textContent = "—";
+        setMetaCellText(el, "—");
       }
       return;
     }
 
-    if (aspect) aspect.textContent = `${meta.aspect} (${meta.megapixels} MP)`;
-    if (alpha) {
-      alpha.textContent =
-        meta.hasAlpha === null
-          ? "—"
-          : i18n.t(meta.hasAlpha ? "alphaPresent" : "alphaOpaque");
-    }
-    if (depth) depth.textContent = meta.bitDepth || "—";
-    if (profile) profile.textContent = meta.colorProfile || "sRGB";
-    if (dpi) dpi.textContent = meta.dpi || "72 DPI";
+    setMetaCellText(aspect, `${meta.aspect} (${meta.megapixels} MP)`);
+    setMetaCellText(
+      alpha,
+      meta.hasAlpha === null
+        ? "—"
+        : i18n.t(meta.hasAlpha ? "alphaPresent" : "alphaOpaque")
+    );
+    setMetaCellText(depth, meta.bitDepth || "—");
+    setMetaCellText(profile, meta.colorProfile || "sRGB");
+    setMetaCellText(dpi, meta.dpi || "72 DPI");
 
     const compKeyMap = {
       lossless: "compLossless",
@@ -1863,20 +2366,17 @@ function updateExtendedMetadataTable() {
       lzw: "compLzw",
       standard: "compStandard",
     };
-    if (comp) {
-      const k = compKeyMap[meta.compression];
-      comp.textContent = k ? i18n.t(k) : meta.compression || "—";
-    }
+    const k = compKeyMap[meta.compression];
+    setMetaCellText(comp, k ? i18n.t(k) : meta.compression || "—");
 
-    if (cam) cam.textContent = meta.camera || i18n.t("noExifData");
-    if (exp) {
-      const parts = [meta.focalLength, meta.aperture, meta.exposure, meta.iso].filter(Boolean);
-      exp.textContent = parts.length ? parts.join(" · ") : "—";
-    }
+    setMetaCellText(cam, meta.camera || i18n.t("noExifData"));
+    const parts = [meta.focalLength, meta.aperture, meta.exposure, meta.iso].filter(Boolean);
+    setMetaCellText(exp, parts.length ? parts.join(" · ") : "—");
   };
 
   fillMeta("A", state.metaA);
   fillMeta("B", state.metaB);
+  refreshMetaMarquee();
 }
 
 function renderProceduralDemoCanvas(variant) {
@@ -2041,67 +2541,187 @@ function ensureBothImages() {
 /* ============================================================================
    Settings Modal, Help Modal & Anchored Popovers
    ============================================================================ */
+function updateNudgeStepLabel() {
+  if (dom.nudgeStepLabel) {
+    dom.nudgeStepLabel.textContent = `${Number(settings.get("nudgeStep")) || 1}px`;
+  }
+}
+
+function notifySettingSaved() {
+  showToast(i18n.t("settingSaved"), { duration: 1200, id: "setting-saved", type: "success" });
+}
+
 function bindSettingsDialog() {
   setupDialogEnhancements(dom.settingsDialog, dom.btnSettings, dom.btnCloseSettings);
 
-  // Sidebar navigation inside settings modal
-  document.querySelectorAll(".settings-nav-btn[data-settings-tab]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const tab = btn.dataset.settingsTab;
-      document.querySelectorAll(".settings-nav-btn").forEach((b) => {
-        b.classList.toggle("active", b === btn);
-      });
-      document.querySelectorAll(".settings-tab-panel[data-tab-panel]").forEach((panel) => {
-        panel.classList.toggle("hidden", panel.dataset.tabPanel !== tab);
-      });
+  const activateTab = (tabName) => {
+    const valid = document.querySelector(`.settings-tab[data-tab="${tabName}"]`);
+    const target = valid ? tabName : "appearance";
+    document.querySelectorAll(".settings-tab[data-tab]").forEach((b) => {
+      b.classList.toggle("active", b.dataset.tab === target);
     });
+    document.querySelectorAll(".settings-pane[data-pane]").forEach((panel) => {
+      panel.classList.toggle("hidden", panel.dataset.pane !== target);
+    });
+    try {
+      sessionStorage.setItem("photocheck_settings_tab", target);
+    } catch { }
+  };
+
+  try {
+    const savedTab = sessionStorage.getItem("photocheck_settings_tab");
+    if (savedTab) activateTab(savedTab);
+  } catch { }
+
+  document.querySelectorAll(".settings-tab[data-tab]").forEach((btn) => {
+    btn.addEventListener("click", () => activateTab(btn.dataset.tab));
   });
 
   document.querySelectorAll("[data-setting-theme]").forEach((btn) => {
-    btn.addEventListener("click", () => settings.set("theme", btn.dataset.settingTheme));
+    btn.addEventListener("click", () => {
+      settings.set("theme", btn.dataset.settingTheme);
+      notifySettingSaved();
+    });
   });
   document.querySelectorAll("[data-accent]").forEach((btn) => {
-    btn.addEventListener("click", () => settings.set("accent", btn.dataset.accent));
+    btn.addEventListener("click", () => {
+      settings.set("accent", btn.dataset.accent);
+      notifySettingSaved();
+    });
+  });
+  document.querySelectorAll("[data-color-a]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      settings.set("colorA", btn.dataset.colorA);
+      notifySettingSaved();
+    });
+  });
+  document.querySelectorAll("[data-color-b]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      settings.set("colorB", btn.dataset.colorB);
+      notifySettingSaved();
+    });
   });
   document.querySelectorAll("[data-backdrop]").forEach((btn) => {
-    btn.addEventListener("click", () => settings.set("backdrop", btn.dataset.backdrop));
+    btn.addEventListener("click", () => {
+      settings.set("backdrop", btn.dataset.backdrop);
+      notifySettingSaved();
+    });
   });
   document.querySelectorAll("[data-density]").forEach((btn) => {
-    btn.addEventListener("click", () => settings.set("density", btn.dataset.density));
+    btn.addEventListener("click", () => {
+      settings.set("density", btn.dataset.density);
+      notifySettingSaved();
+    });
+  });
+  document.querySelectorAll("[data-ui-scale]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      settings.set("uiScale", Number(btn.dataset.uiScale));
+      notifySettingSaved();
+    });
+  });
+  document.querySelectorAll("[data-motion]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      settings.set("reduceMotion", btn.dataset.motion);
+      notifySettingSaved();
+    });
   });
   document.querySelectorAll("[data-render]").forEach((btn) => {
     btn.addEventListener("click", () => {
       settings.set("imageRendering", btn.dataset.render);
       modesCtrl.setImageRenderingPref(btn.dataset.render);
+      notifySettingSaved();
     });
   });
   document.querySelectorAll("[data-zoom-speed]").forEach((btn) => {
-    btn.addEventListener("click", () => settings.set("wheelZoomSpeed", Number(btn.dataset.zoomSpeed)));
+    btn.addEventListener("click", () => {
+      settings.set("wheelZoomSpeed", Number(btn.dataset.zoomSpeed));
+      notifySettingSaved();
+    });
   });
   document.querySelectorAll("[data-curtain]").forEach((btn) => {
-    btn.addEventListener("click", () => settings.set("curtainStyle", btn.dataset.curtain));
+    btn.addEventListener("click", () => {
+      settings.set("curtainStyle", btn.dataset.curtain);
+      notifySettingSaved();
+    });
   });
   document.querySelectorAll("[data-autoload]").forEach((btn) => {
-    btn.addEventListener("click", () => settings.set("autoAlignOnLoad", btn.dataset.autoload));
+    btn.addEventListener("click", () => {
+      settings.set("autoAlignOnLoad", btn.dataset.autoload);
+      notifySettingSaved();
+    });
   });
   document.querySelectorAll("[data-nudge]").forEach((btn) => {
-    btn.addEventListener("click", () => settings.set("nudgeStep", Number(btn.dataset.nudge)));
+    btn.addEventListener("click", () => {
+      settings.set("nudgeStep", Number(btn.dataset.nudge));
+      updateNudgeStepLabel();
+      notifySettingSaved();
+    });
+  });
+  document.querySelectorAll("[data-default-diff]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const style = btn.dataset.defaultDiff;
+      settings.set("defaultDiffMode", style);
+      modesCtrl.setDiffConfig({ style });
+      updateDiffUI();
+      notifySettingSaved();
+    });
   });
 
+  dom.settingDefaultDiffGain?.addEventListener("input", () => {
+    const gain = Number(dom.settingDefaultDiffGain.value);
+    settings.set("diffGain", gain);
+    modesCtrl.setDiffConfig({ gain });
+    updateDiffUI();
+    if (dom.settingDefaultDiffGainVal) dom.settingDefaultDiffGainVal.textContent = `${gain}×`;
+  });
+
+  dom.settingToggleGlass?.addEventListener("change", () => {
+    settings.set("glassEffects", dom.settingToggleGlass.checked);
+    notifySettingSaved();
+  });
+  dom.settingToggleQuickbar?.addEventListener("change", () => {
+    const show = dom.settingToggleQuickbar.checked;
+    settings.set("showQuickBar", show);
+    toggleQuickBar(!show);
+    notifySettingSaved();
+  });
+  dom.settingToggleAutohideHud?.addEventListener("change", () => {
+    settings.set("autoHideBottomHud", dom.settingToggleAutohideHud.checked);
+    resetBottomHudAutoHideTimer();
+    notifySettingSaved();
+  });
+  dom.settingToggleModestrip?.addEventListener("change", () => {
+    settings.set("showModeBottomStrip", dom.settingToggleModestrip.checked);
+    updateModeBottomStripVisibility();
+    notifySettingSaved();
+  });
   dom.settingToggleProbe?.addEventListener("change", () => {
     settings.set("pixelProbe", dom.settingToggleProbe.checked);
     updateProbeVisibility();
+    notifySettingSaved();
+  });
+  dom.settingToggleFilenames?.addEventListener("change", () => {
+    const show = dom.settingToggleFilenames.checked;
+    settings.set("showFilenameBadges", show);
+    state.showFilenames = show;
+    updateFilenamesToggleUI();
+    notifySettingSaved();
   });
   dom.settingToggleAutohideBadges?.addEventListener("change", () => {
     settings.set("autoHideBadges", dom.settingToggleAutohideBadges.checked);
+    notifySettingSaved();
   });
   dom.settingToggleAutometrics?.addEventListener("change", () => {
     settings.set("autoComputeMetrics", dom.settingToggleAutometrics.checked);
     if (dom.settingToggleAutometrics.checked) scheduleMetricsRecalc();
+    notifySettingSaved();
   });
 
   document.querySelectorAll("#setting-lang-group .lang-btn").forEach((btn) => {
-    btn.addEventListener("click", () => i18n.setLanguage(btn.dataset.lang));
+    btn.addEventListener("click", () => {
+      i18n.setLanguage(btn.dataset.lang);
+      notifySettingSaved();
+    });
   });
 
   dom.btnResetSettings?.addEventListener("click", () => {
@@ -2109,15 +2729,20 @@ function bindSettingsDialog() {
     modesCtrl.diffStyle = settings.get("defaultDiffMode");
     modesCtrl.diffGain = settings.get("diffGain");
     modesCtrl.setImageRenderingPref(settings.get("imageRendering"));
+    toggleQuickBar(!settings.get("showQuickBar"));
+    updateModeBottomStripVisibility();
+    resetBottomHudAutoHideTimer();
     updateDiffUI();
     updateProbeVisibility();
+    updateNudgeStepLabel();
     syncSettingsUI();
-    showToast(i18n.t("settingsResetDone"));
+    showToast(i18n.t("settingsResetDone"), { type: "success" });
   });
 
   settings.subscribe(() => {
     syncSettingsUI();
     updateProbeVisibility();
+    updateNudgeStepLabel();
   });
 }
 
@@ -2125,19 +2750,26 @@ function syncSettingsUI() {
   const s = settings.getAll();
   const markGroup = (selector, attr, val) => {
     document.querySelectorAll(selector).forEach((el) => {
-      el.classList.toggle("active", el.getAttribute(attr) === String(val));
+      const isMatch = el.getAttribute(attr) === String(val);
+      el.classList.toggle("active", isMatch);
+      el.setAttribute("aria-pressed", String(isMatch));
     });
   };
 
   markGroup("[data-setting-theme]", "data-setting-theme", s.theme);
   markGroup("[data-accent]", "data-accent", s.accent);
+  markGroup("[data-color-a]", "data-color-a", s.colorA);
+  markGroup("[data-color-b]", "data-color-b", s.colorB);
   markGroup("[data-backdrop]", "data-backdrop", s.backdrop);
   markGroup("[data-density]", "data-density", s.density);
+  markGroup("[data-ui-scale]", "data-ui-scale", s.uiScale);
+  markGroup("[data-motion]", "data-motion", s.reduceMotion);
   markGroup("[data-render]", "data-render", s.imageRendering);
   markGroup("[data-zoom-speed]", "data-zoom-speed", s.wheelZoomSpeed);
   markGroup("[data-curtain]", "data-curtain", s.curtainStyle);
   markGroup("[data-autoload]", "data-autoload", s.autoAlignOnLoad);
   markGroup("[data-nudge]", "data-nudge", s.nudgeStep);
+  markGroup("[data-default-diff]", "data-default-diff", s.defaultDiffMode);
 
   if (dom.themeSystemResolved) {
     const sysTheme = settings.getSystemTheme();
@@ -2146,7 +2778,22 @@ function syncSettingsUI() {
     )})`;
   }
 
+  if (dom.settingDefaultDiffGain) {
+    dom.settingDefaultDiffGain.value = String(s.diffGain || 3);
+    syncRangeVars(dom.settingDefaultDiffGain);
+  }
+  if (dom.settingDefaultDiffGainVal) {
+    dom.settingDefaultDiffGainVal.textContent = `${s.diffGain || 3}×`;
+  }
+
+  if (dom.settingToggleGlass) dom.settingToggleGlass.checked = s.glassEffects !== false;
+  if (dom.settingToggleQuickbar) dom.settingToggleQuickbar.checked = s.showQuickBar !== false;
+  if (dom.settingToggleAutohideHud) dom.settingToggleAutohideHud.checked = s.autoHideBottomHud !== false;
+  if (dom.settingToggleModestrip) dom.settingToggleModestrip.checked = s.showModeBottomStrip !== false;
   if (dom.settingToggleProbe) dom.settingToggleProbe.checked = Boolean(s.pixelProbe);
+  if (dom.settingToggleFilenames) {
+    dom.settingToggleFilenames.checked = s.showFilenameBadges !== false;
+  }
   if (dom.settingToggleAutohideBadges) {
     dom.settingToggleAutohideBadges.checked = Boolean(s.autoHideBadges);
   }
@@ -2157,6 +2804,14 @@ function syncSettingsUI() {
 
 function bindHelpDialog() {
   setupDialogEnhancements(dom.helpDialog, dom.btnHelp, dom.btnCloseHelp);
+
+  dom.helpShortcutSearch?.addEventListener("input", () => {
+    const q = dom.helpShortcutSearch.value.trim().toLowerCase();
+    dom.helpShortcutsList?.querySelectorAll(".shortcut-row").forEach((row) => {
+      const text = row.textContent.toLowerCase();
+      row.classList.toggle("hidden", Boolean(q) && !text.includes(q));
+    });
+  });
 }
 
 function bindPopovers() {
@@ -2176,6 +2831,9 @@ function syncDynamicTextsOnLanguageChange() {
   syncSettingsUI();
   updatePointBanner();
   refreshAllImageUI();
+  updateBlinkButtonsUI();
+  updateMissingSlotPrompt();
+  requestAnimationFrame(updateModeIndicator);
 }
 
 /* ============================================================================
@@ -2207,6 +2865,7 @@ function bindKeyboardShortcuts() {
     else if (e.key === "2") applyModeSelection("fade");
     else if (e.key === "3") applyModeSelection("split");
     else if (e.key === "4") applyModeSelection("diff");
+    else if (e.key === "5") applyModeSelection("blink");
     else if (e.key === "f" || e.key === "F" || e.key === "а" || e.key === "А") {
       fitImagesToViewport();
     } else if (e.key === "0") {
@@ -2217,7 +2876,9 @@ function bindKeyboardShortcuts() {
       swapImagesAndState();
     } else if (e.key === "b" || e.key === "B" || e.key === "и" || e.key === "И") {
       state.showFilenames = !state.showFilenames;
+      settings.set("showFilenameBadges", state.showFilenames);
       updateFilenamesToggleUI();
+      syncSettingsUI();
     } else if (e.key === "i" || e.key === "I" || e.key === "ш" || e.key === "Ш") {
       settings.set("pixelProbe", !settings.get("pixelProbe"));
       updateProbeVisibility();
@@ -2231,7 +2892,7 @@ function bindKeyboardShortcuts() {
         e.preventDefault();
         state.isFlashing = true;
         state.opacityBeforeFlash = modesCtrl.opacity;
-        if (modesCtrl.currentMode !== "fade") applyModeSelection("fade");
+        if (state.uiMode !== "fade") applyModeSelection("fade");
         const flashVal = state.opacityBeforeFlash > 0.5 ? 0 : 1;
         modesCtrl.setOpacity(flashVal);
         updateOpacityUI(flashVal);

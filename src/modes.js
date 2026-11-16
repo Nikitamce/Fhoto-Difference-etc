@@ -47,7 +47,7 @@ export class ModesController {
           <div class="curtain-line"></div>
           <div class="curtain-thumb">
             <span class="curtain-tag curtain-tag-a" aria-hidden="true">A</span>
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <svg class="i" viewBox="0 0 24 24" aria-hidden="true">
               <path d="m9 7-5 5 5 5"/>
               <path d="m15 7 5 5-5 5"/>
             </svg>

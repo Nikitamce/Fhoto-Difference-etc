@@ -8,7 +8,7 @@ const translations = {
     toggleRightPanel: "Свернуть или развернуть правую панель инспектора",
     toggleBottomPanel: "Свернуть или развернуть панель загрузки",
     toggleQuickBar: "Свернуть или развернуть панель быстрых действий",
-    openSettings: "Открыть настройки",
+    openSettings: "Настройки (Ctrl+,)",
     openHelp: "Справка и горячие клавиши",
     selectLanguage: "Выбрать язык интерфейса",
     zoomOut: "Уменьшить масштаб",
@@ -21,12 +21,13 @@ const translations = {
     modeFade: "Наложение",
     modeSplit: "Рядом",
     modeDiff: "Разница",
-    orientationVert: "Вертикальная шторка",
-    orientationHoriz: "Горизонтальная шторка",
+    modeBlink: "Мигание",
+    orientationVert: "Вертикальная шторка (H)",
+    orientationHoriz: "Горизонтальная шторка (H)",
 
     // Zoom
-    fitWindow: "По окну",
-    actualSize: "1:1 (100%)",
+    fitWindow: "По окну (F)",
+    actualSize: "1:1 / 100% (0)",
     fitShort: "По окну",
 
     // Left Dock (Alignment & Registration)
@@ -80,7 +81,11 @@ const translations = {
     clickToUploadShort: "Выбрать файл",
     replacePhoto: "Заменить",
 
-    accBlendTitle: "Наложение и мигание",
+    accBlendTitle: "Наложение",
+    accBlinkTitle: "Авто-мигание",
+    blinkPause: "Пауза",
+    blinkResume: "Мигать",
+    blinkActiveFrame: "Текущий кадр",
     opacityLabel: "Прозрачность A",
     flashToggle: "Быстрая вспышка",
     autoBlink: "Авто-мигание",
@@ -146,11 +151,11 @@ const translations = {
     cancel: "Отмена",
 
     // Quick Action Bar
-    showBoth: "По окну",
-    swapPhotos: "Поменять A⇄B",
+    showBoth: "По окну (F)",
+    swapPhotos: "Поменять A⇄B (X)",
     quickSwapShort: "A ⇄ B",
     syncZoom: "Синхр.",
-    showFilenames: "Метки",
+    showFilenames: "Метки (B)",
     pixelProbeToggle: "Пиксель-лупа (I)",
     quickProbeShort: "Лупа",
     quickUploadToggle: "Загрузка",
@@ -175,9 +180,13 @@ const translations = {
     // Settings Dialog
     settingsTitle: "Настройки PhotoCheck",
     settingsNavAppearance: "Внешний вид",
-    settingsNavViewport: "Холст и зум",
-    settingsNavCompare: "Сравнение",
+    settingsNavViewport: "Просмотр",
+    settingsNavCompare: "Выравнивание",
+    settingsNavShortcuts: "Клавиши",
+    settingsNavAbout: "О программе",
     settingsNavGeneral: "Язык и сброс",
+    doneBtn: "Готово",
+    settingSaved: "Сохранено",
 
     settingThemeLabel: "Тема оформления",
     settingThemeDesc: "Выберите светлую, тёмную студию или синхронизацию с ОС",
@@ -189,6 +198,60 @@ const translations = {
 
     settingAccentLabel: "Акцентный цвет",
     settingAccentDesc: "Цвет активных инструментов и управляющих элементов",
+
+    settingColorALabel: "Цвет кадра A",
+    settingColorADesc: "Маркер и подсветка первого изображения",
+    settingColorBLabel: "Цвет кадра B",
+    settingColorBDesc: "Маркер и подсветка второго изображения",
+
+    settingUiScaleLabel: "Масштаб интерфейса",
+    settingUiScaleDesc: "Размер шрифтов и элементов панелей",
+
+    settingReduceMotionLabel: "Уменьшение анимаций",
+    settingReduceMotionDesc: "Отключает плавные переходы и эффекты движения",
+    motionSystem: "Система",
+    motionOn: "Вкл",
+    motionOff: "Выкл",
+
+    settingGlassLabel: "Эффект стекла (Blur)",
+    settingGlassDesc: "Полупрозрачное размытие на плавающих панелях",
+
+    settingQuickBarLabel: "Показывать панель быстрых действий",
+    settingQuickBarDesc: "Плавающая панель поверх холста по умолчанию",
+
+    settingAutoHideHudLabel: "Автоскрытие нижней панели (3 сек)",
+    settingAutoHideHudDesc: "Скрывает плавающую панель поверх фото и показывает при наведении вниз",
+
+    settingModeStripLabel: "Длинная полоса Наложения и Мигания снизу",
+    settingModeStripDesc: "Удобный широкий ползунок прозрачности, вспышки и интервала над нижней панелью",
+
+    stripOpacityShort: "Прозрачность A",
+    stripIntervalShort: "Интервал",
+
+    settingDefaultDiffLabel: "Режим разницы по умолчанию",
+    settingDefaultDiffDesc: "Визуализация при переключении в «Разница»",
+    settingDefaultDiffGainLabel: "Усиление разницы по умолчанию",
+    settingDefaultDiffGainDesc: "Начальный коэффициент контраста отличий",
+
+    sectionChannelsTitle: "Цветовой канал",
+    modeHintSlider: "Перетаскивайте шторку для попиксельного сравнения A и B",
+    modeHintSplit: "Оба изображения рядом. Используйте «Синхр.» для раздельного зума",
+    pointBannerStep: "Кликните точку {curr} из {total} на фото {slot}",
+    dropAsA: "Бросить как фото A",
+    dropAsB: "Бросить как фото B",
+    dropSlotHint: "Отпустите файл на нужную половину",
+    pasteLoadedA: "Вставлено как фото A",
+    pasteLoadedB: "Вставлено как фото B",
+    pasteLoadedBoth: "Вставлены фото A и B",
+    searchShortcutsPlaceholder: "Поиск горячих клавиш...",
+    aboutDesc: "Офлайн-утилита для точного визуального сравнения, выравнивания и анализа разницы изображений.",
+    aboutVersion: "Версия",
+    aboutOffline: "Работает 100% офлайн — все данные остаются в браузере",
+    aboutGithub: "Открыть на GitHub",
+    hintKeyModes: "Режимы",
+    hintKeyFit: "По окну",
+    hintKeySwap: "Поменять A/B",
+    hintKeyPaste: "Вставить",
 
     settingBackdropLabel: "Фон рабочей области",
     settingBackdropDesc: "Шахматная сетка помогает видеть прозрачность (Alpha)",
@@ -226,6 +289,9 @@ const translations = {
     settingAutoHideBadgesLabel: "Скрывать плашки имён при работе на холсте",
     settingAutoHideBadgesDesc: "Бейджи A и B затухают во время панорамирования",
 
+    settingShowFilenamesLabel: "Показывать плашки имён файлов (B)",
+    settingShowFilenamesDesc: "Отображает бейджи с именами кадров A и B поверх холста",
+
     settingAutoAlignLoadLabel: "При загрузке пары фото",
     settingAutoAlignLoadDesc: "Автоматическое действие после выбора второго кадра",
     autoLoadNone: "Только центрировать",
@@ -255,7 +321,7 @@ const translations = {
     helpStep4Title: "4. Детальный осмотр",
     helpStep4: "Зум до 1000% к точке курсора, цветовые каналы R/G/B/Luma и экспорт PNG в 1 клик.",
     shortcutsTitle: "Горячие клавиши",
-    keyModes: "Режимы: Шторка / Наложение / Рядом / Разница",
+    keyModes: "Режимы: Шторка / Наложение / Рядом / Разница / Мигание",
     keyOrientation: "Повернуть шторку (верт./гориз.)",
     keyFlashHold: "Удерживать — быстрая вспышка A↔B",
     keyFit: "Поместить в окно (Fit)",
@@ -298,7 +364,7 @@ const translations = {
     toggleRightPanel: "Toggle right inspector panel",
     toggleBottomPanel: "Toggle bottom upload dock",
     toggleQuickBar: "Toggle floating quick actions bar",
-    openSettings: "Open settings",
+    openSettings: "Settings (Ctrl+,)",
     openHelp: "Help & keyboard shortcuts",
     selectLanguage: "Select interface language",
     zoomOut: "Zoom out",
@@ -311,12 +377,13 @@ const translations = {
     modeFade: "Fade",
     modeSplit: "Split",
     modeDiff: "Diff",
-    orientationVert: "Vertical curtain",
-    orientationHoriz: "Horizontal curtain",
+    modeBlink: "Blink",
+    orientationVert: "Vertical curtain (H)",
+    orientationHoriz: "Horizontal curtain (H)",
 
     // Zoom
-    fitWindow: "Fit to window",
-    actualSize: "1:1 (100%)",
+    fitWindow: "Fit to window (F)",
+    actualSize: "1:1 / 100% (0)",
     fitShort: "Fit",
 
     // Left Dock
@@ -370,7 +437,11 @@ const translations = {
     clickToUploadShort: "Choose file",
     replacePhoto: "Replace",
 
-    accBlendTitle: "Overlay & Blinking",
+    accBlendTitle: "Overlay Blend",
+    accBlinkTitle: "Auto Blink",
+    blinkPause: "Pause",
+    blinkResume: "Blink",
+    blinkActiveFrame: "Visible frame",
     opacityLabel: "Image A Opacity",
     flashToggle: "Fast Flash",
     autoBlink: "Auto Blink",
@@ -436,11 +507,11 @@ const translations = {
     cancel: "Cancel",
 
     // Quick Action Bar
-    showBoth: "Fit",
-    swapPhotos: "Swap A⇄B",
+    showBoth: "Fit (F)",
+    swapPhotos: "Swap A⇄B (X)",
     quickSwapShort: "A ⇄ B",
     syncZoom: "Sync",
-    showFilenames: "Badges",
+    showFilenames: "Badges (B)",
     pixelProbeToggle: "Pixel Probe (I)",
     quickProbeShort: "Probe",
     quickUploadToggle: "Upload",
@@ -465,9 +536,13 @@ const translations = {
     // Settings Dialog
     settingsTitle: "PhotoCheck Settings",
     settingsNavAppearance: "Appearance",
-    settingsNavViewport: "Canvas & Zoom",
-    settingsNavCompare: "Comparison",
+    settingsNavViewport: "Viewport",
+    settingsNavCompare: "Alignment",
+    settingsNavShortcuts: "Shortcuts",
+    settingsNavAbout: "About",
     settingsNavGeneral: "Language & Reset",
+    doneBtn: "Done",
+    settingSaved: "Saved",
 
     settingThemeLabel: "Color Theme",
     settingThemeDesc: "Choose light studio, darkroom, or follow OS preference",
@@ -479,6 +554,60 @@ const translations = {
 
     settingAccentLabel: "Accent Color",
     settingAccentDesc: "Highlight color for active controls and markers",
+
+    settingColorALabel: "Image A Color",
+    settingColorADesc: "Badge and highlight color for the first image",
+    settingColorBLabel: "Image B Color",
+    settingColorBDesc: "Badge and highlight color for the second image",
+
+    settingUiScaleLabel: "Interface Scale",
+    settingUiScaleDesc: "Adjusts font sizes and panel proportions",
+
+    settingReduceMotionLabel: "Reduce Motion",
+    settingReduceMotionDesc: "Disables transitions and motion effects",
+    motionSystem: "System",
+    motionOn: "On",
+    motionOff: "Off",
+
+    settingGlassLabel: "Glass Blur Effects",
+    settingGlassDesc: "Translucent backdrop blur on floating controls",
+
+    settingQuickBarLabel: "Show Quick Action Bar",
+    settingQuickBarDesc: "Display the floating quick bar above the dock by default",
+
+    settingAutoHideHudLabel: "Auto-hide bottom floating bar (3s)",
+    settingAutoHideHudDesc: "Fades out the bottom canvas bar after 3 seconds and reveals on bottom hover",
+
+    settingModeStripLabel: "Bottom strip for Fade & Blink",
+    settingModeStripDesc: "Wide horizontal slider bar for opacity, flash, and blink interval",
+
+    stripOpacityShort: "Opacity A",
+    stripIntervalShort: "Interval",
+
+    settingDefaultDiffLabel: "Default Diff Mode",
+    settingDefaultDiffDesc: "Visualization style used in Diff mode",
+    settingDefaultDiffGainLabel: "Default Diff Gain",
+    settingDefaultDiffGainDesc: "Initial contrast amplification for differences",
+
+    sectionChannelsTitle: "Color Channel",
+    modeHintSlider: "Drag the curtain handle for pixel-accurate A/B comparison",
+    modeHintSplit: "Side-by-side view. Toggle Sync to zoom or pan independently",
+    pointBannerStep: "Click point {curr} of {total} on Image {slot}",
+    dropAsA: "Drop as Image A",
+    dropAsB: "Drop as Image B",
+    dropSlotHint: "Release file on the desired half",
+    pasteLoadedA: "Pasted as Image A",
+    pasteLoadedB: "Pasted as Image B",
+    pasteLoadedBoth: "Pasted Images A and B",
+    searchShortcutsPlaceholder: "Search shortcuts...",
+    aboutDesc: "Offline-first utility for precise visual image comparison, alignment, and pixel-difference analysis.",
+    aboutVersion: "Version",
+    aboutOffline: "Runs 100% offline — your images never leave your browser",
+    aboutGithub: "View on GitHub",
+    hintKeyModes: "Modes",
+    hintKeyFit: "Fit",
+    hintKeySwap: "Swap A/B",
+    hintKeyPaste: "Paste",
 
     settingBackdropLabel: "Workspace Backdrop",
     settingBackdropDesc: "Checkerboard reveals transparent alpha pixels",
@@ -516,6 +645,9 @@ const translations = {
     settingAutoHideBadgesLabel: "Fade filename badges while interacting",
     settingAutoHideBadgesDesc: "Auto-dims corner pills during canvas panning",
 
+    settingShowFilenamesLabel: "Show filename badges (B)",
+    settingShowFilenamesDesc: "Displays Image A and B filename pills over the canvas",
+
     settingAutoAlignLoadLabel: "On Loading Image Pair",
     settingAutoAlignLoadDesc: "Automatic action when both images are ready",
     autoLoadNone: "Center Only",
@@ -545,7 +677,7 @@ const translations = {
     helpStep4Title: "4. Pixel Inspection",
     helpStep4: "Zoom up to 1000%, isolate R/G/B/Luma channels, probe RGB values, and export PNGs.",
     shortcutsTitle: "Keyboard Shortcuts",
-    keyModes: "Switch modes: Curtain / Fade / Split / Diff",
+    keyModes: "Switch modes: Curtain / Fade / Split / Diff / Blink",
     keyOrientation: "Flip curtain orientation (Vert / Horiz)",
     keyFlashHold: "Hold for quick A↔B flash peek",
     keyFit: "Fit to window",
@@ -631,6 +763,11 @@ class I18nManager {
     document.querySelectorAll("[data-i18n-aria-label]").forEach((el) => {
       const key = el.getAttribute("data-i18n-aria-label");
       el.setAttribute("aria-label", this.t(key));
+    });
+
+    document.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
+      const key = el.getAttribute("data-i18n-placeholder");
+      el.setAttribute("placeholder", this.t(key));
     });
 
     document.querySelectorAll(".lang-btn, .lang-option").forEach((btn) => {
