@@ -3,6 +3,7 @@ import { SynchronizedViewer } from "./viewer.js";
 import { ModesController } from "./modes.js";
 import { computeAutoEdgeAlignment } from "./auto_align.js";
 import { loadOpenCV, computeOpenCVAlignment } from "./opencv_align.js";
+import { exportViewAsPng } from "./export.js";
 
 document.addEventListener("DOMContentLoaded", () => {
   // Initialize i18n
@@ -143,6 +144,9 @@ document.addEventListener("DOMContentLoaded", () => {
     scaleBRange.value = Math.round(ratio * 100);
     scaleBInput.value = ratio.toFixed(2);
   }
+
+  // В режиме «Рядом» каждое фото живёт в своей половине холста
+  function fitW(rect) { return modesCtrl?.currentMode === "split" ? rect.width / 2 : rect.width; }
 
   function toggleLeftPanel(collapse) {
     if (collapse) {
@@ -499,11 +503,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function checkBothImagesLoaded() {
     if (!modesCtrl || !viewer || !workspace) return;
+    if (imageASrc || imageBSrc) workspace.classList.add("has-images");
     if (imageASrc && imageBSrc) {
       modesCtrl.updateImages(imageASrc, imageBSrc);
       viewer.setImages(imgAObj, imgBObj);
       const rect = workspace.getBoundingClientRect();
-      viewer.centerBoth(rect.width, rect.height);
+      viewer.centerBoth(fitW(rect), rect.height);
       updateFilenameBadges();
       setActiveAlignTool(currentActiveAlignBtn || btnAutoEdge);
       updateStatusHint(i18n.t("imagesLoaded"), false);
@@ -511,13 +516,13 @@ document.addEventListener("DOMContentLoaded", () => {
       modesCtrl.updateImages(imageASrc, null);
       viewer.setImages(imgAObj, null);
       const rect = workspace.getBoundingClientRect();
-      viewer.centerBoth(rect.width, rect.height);
+      viewer.centerBoth(fitW(rect), rect.height);
       updateFilenameBadges();
     } else if (imageBSrc) {
       modesCtrl.updateImages(null, imageBSrc);
       viewer.setImages(null, imgBObj);
       const rect = workspace.getBoundingClientRect();
-      viewer.centerBoth(rect.width, rect.height);
+      viewer.centerBoth(fitW(rect), rect.height);
       updateFilenameBadges();
     }
   }
@@ -701,18 +706,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.getElementById("btn-zoom-fit")?.addEventListener("click", () => {
     const rect = workspace.getBoundingClientRect();
-    viewer.centerBoth(rect.width, rect.height);
+    viewer.centerBoth(fitW(rect), rect.height);
   });
 
   // Quick Bar Handlers
   document.getElementById("btn-quick-show-both")?.addEventListener("click", () => {
     const rect = workspace.getBoundingClientRect();
-    viewer.centerBoth(rect.width, rect.height);
+    viewer.centerBoth(fitW(rect), rect.height);
   });
 
   document.getElementById("btn-quick-fit")?.addEventListener("click", () => {
     const rect = workspace.getBoundingClientRect();
-    viewer.centerBoth(rect.width, rect.height);
+    viewer.centerBoth(fitW(rect), rect.height);
   });
 
   document.getElementById("btn-quick-actual")?.addEventListener("click", () => {
@@ -812,6 +817,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     modesCtrl.setMode(mode);
+    if (viewer && imgAObj) { const r = workspace.getBoundingClientRect(); viewer.centerBoth(fitW(r), r.height); }
   });
 
   opacityRange?.addEventListener("input", (e) => {
@@ -1047,7 +1053,7 @@ document.addEventListener("DOMContentLoaded", () => {
     viewer.setScaleRatioA(1.0);
     viewer.setScaleRatioB(1.0);
     const rect = workspace.getBoundingClientRect();
-    viewer.centerBoth(rect.width, rect.height);
+    viewer.centerBoth(fitW(rect), rect.height);
     updateScaleAUI();
     updateScaleBUI();
   });
@@ -1055,7 +1061,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btn-center")?.addEventListener("click", () => {
     if (!viewer || !workspace) return;
     const rect = workspace.getBoundingClientRect();
-    viewer.centerBoth(rect.width, rect.height);
+    viewer.centerBoth(fitW(rect), rect.height);
   });
 
   document.getElementById("btn-swap")?.addEventListener("click", handleSwap);
@@ -1152,11 +1158,20 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   const fileInputPair = document.getElementById("file-input-pair");
-  fileInputPair?.addEventListener("change", (e) => {
-    const files = Array.from(e.target.files).filter(isImageFile);
+  function loadPairFiles(files) {
     if (files.length < 1) return;
 
-    e.target.value = "";
+    // Один файл при уже загруженном A — кладём его в B
+    if (files.length === 1 && imageASrc && !imageBSrc) {
+      loadSingleFile(files[0], (src, img) => {
+        imageBSrc = src; imgBObj = img; fileObjB = files[0]; filenameB = files[0].name;
+        const pb = document.getElementById("preview-b");
+        if (pb) { pb.src = src; pb.classList.remove("hidden"); }
+        checkBothImagesLoaded();
+        updateRightSidebarInfo();
+      });
+      return;
+    }
 
     if (files.length >= 2) {
       loadSingleFile(files[0], (src, img) => {
@@ -1191,6 +1206,29 @@ document.addEventListener("DOMContentLoaded", () => {
         updateRightSidebarInfo();
       });
     }
+  }
+
+  fileInputPair?.addEventListener("change", (e) => {
+    const files = Array.from(e.target.files).filter(isImageFile);
+    e.target.value = "";
+    loadPairFiles(files);
+  });
+
+  // Перетаскивание файлов прямо на холст (1 или 2 файла)
+  window.addEventListener("dragover", (e) => e.preventDefault());
+  window.addEventListener("drop", (e) => e.preventDefault());
+  workspace?.addEventListener("dragenter", (e) => {
+    if (e.dataTransfer?.types?.includes("Files")) workspace.classList.add("drop-over");
+  });
+  workspace?.addEventListener("dragleave", (e) => {
+    if (!workspace.contains(e.relatedTarget)) workspace.classList.remove("drop-over");
+  });
+  workspace?.addEventListener("drop", (e) => {
+    workspace.classList.remove("drop-over");
+    const all = Array.from(e.dataTransfer?.files || []);
+    const files = all.filter(isImageFile).slice(0, 2);
+    if (!files.length) { if (all.length) updateStatusHint(i18n.t("invalidFile"), false); return; }
+    loadPairFiles(files);
   });
 
   document.querySelectorAll(".lang-btn, .lang-option").forEach((btn) => {
@@ -1199,6 +1237,35 @@ document.addEventListener("DOMContentLoaded", () => {
       i18n.setLanguage(lang);
       langDropdownMenu?.classList.add("hidden");
     });
+  });
+
+  document.getElementById("btn-export-action")?.addEventListener("click", async () => {
+    if (!imageASrc || !imageBSrc) { updateStatusHint(i18n.t("exportNoImages"), false); return; }
+    try {
+      const mode = container?.classList.contains("diff-mode") ? "diff" : (modesCtrl?.currentMode || "view");
+      await exportViewAsPng(container, mode);
+      updateStatusHint(i18n.t("exportDone"), false);
+    } catch (err) {
+      console.error(err);
+      updateStatusHint(i18n.t("exportFail"), false);
+    }
+  });
+  document.getElementById("btn-compare-action")?.addEventListener("click", () => btnToggleDiff?.click());
+
+  // Состояние кнопки «Сравнить» следует за режимом diff
+  const btnCompareEl = document.getElementById("btn-compare-action");
+  new MutationObserver(() => btnCompareEl?.classList.toggle("on", container.classList.contains("diff-mode")))
+    .observe(container, { attributes: true, attributeFilter: ["class"] });
+
+  // Горячие клавиши (работают при любой раскладке)
+  const keyMap = { Digit1: '[data-mode="slider"]', Digit2: '[data-mode="fade"]', Digit3: '[data-mode="split"]',
+    KeyD: "#btn-toggle-diff", KeyF: "#btn-zoom-fit", Digit0: "#btn-zoom-100", KeyX: "#btn-swap" };
+  document.addEventListener("keydown", (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey || /INPUT|TEXTAREA/.test(e.target.tagName)) return;
+    if (e.code === "Escape") { document.getElementById("help-modal")?.classList.add("hidden"); return; }
+    if (e.code === "Slash" && e.shiftKey) { document.getElementById("btn-help")?.click(); return; }
+    const sel = keyMap[e.code];
+    if (sel) { e.preventDefault(); document.querySelector(sel)?.click(); }
   });
 
   const helpModal = document.getElementById("help-modal");

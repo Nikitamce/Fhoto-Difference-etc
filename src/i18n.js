@@ -1,6 +1,16 @@
 const translations = {
   ru: {
     appTitle: "PhotoCheck — Визуальное сравнение фото",
+    helpKeys: "Клавиши: 1·2·3 — режимы, D — diff, F — по размеру окна, 0 — 100%, X — поменять A и B.",
+    dropHere: "Отпустите файлы, чтобы загрузить",
+    tipAlignB: "Двигайте фото B мышью, чтобы вручную совместить его с A",
+    tipAlignA: "Двигайте фото A мышью, чтобы вручную совместить его с B",
+    tipFilenames: "Показать или скрыть имена и размеры файлов на холсте",
+    tipFlash: "Удерживайте для быстрого переключения между A и B",
+    tipBlink: "Автоматически переключать A и B с заданным интервалом",
+    tipDiff: "Показать только отличия между A и B (разница пикселей)",
+    emptyTitle: "Загрузите два изображения",
+    emptyHint: "Перетащите сюда сразу два файла или используйте зоны A и B внизу",
     loadSectionTitle: "Загрузка изображений",
     photoALabel: "Изображение A",
     photoBLabel: "Изображение B",
@@ -100,7 +110,10 @@ const translations = {
     dragOrClick: "или перетащите файл сюда",
     openPair: "Открыть пару файлов",
     btnCompare: "Сравнить",
-    btnExport: "Экспортировать ∨",
+    btnExport: "Экспорт PNG",
+    exportNoImages: "Сначала загрузите изображения",
+    exportDone: "Вид сохранён в PNG",
+    exportFail: "Не удалось сохранить PNG",
     cancel: "Отмена",
 
     // Manual alignment
@@ -122,6 +135,16 @@ const translations = {
   },
   en: {
     appTitle: "PhotoCheck — Visual Photo Comparison",
+    helpKeys: "Keys: 1·2·3 — modes, D — diff, F — fit, 0 — 100%, X — swap A and B.",
+    dropHere: "Drop files to load them",
+    tipAlignB: "Drag photo B with the mouse to align it manually with A",
+    tipAlignA: "Drag photo A with the mouse to align it manually with B",
+    tipFilenames: "Show or hide file names and sizes on the canvas",
+    tipFlash: "Quickly flip between A and B",
+    tipBlink: "Automatically alternate A and B at the chosen interval",
+    tipDiff: "Show only the differences between A and B (pixel difference)",
+    emptyTitle: "Load two images to compare",
+    emptyHint: "Drop two files here at once, or use zones A and B below",
     loadSectionTitle: "Image Upload",
     photoALabel: "Image A",
     photoBLabel: "Image B",
@@ -221,7 +244,10 @@ const translations = {
     dragOrClick: "or drag & drop file here",
     openPair: "Open Pair of Files",
     btnCompare: "Compare",
-    btnExport: "Export ∨",
+    btnExport: "Export PNG",
+    exportNoImages: "Load images first",
+    exportDone: "View saved as PNG",
+    exportFail: "Could not save PNG",
     cancel: "Cancel",
 
     // Manual alignment
@@ -245,7 +271,9 @@ const translations = {
 
 class I18nManager {
   constructor() {
-    this.currentLang = localStorage.getItem("photocheck_lang") || "ru";
+    let saved = null;
+    try { saved = localStorage.getItem("photocheck_lang"); } catch {}
+    this.currentLang = translations[saved] ? saved : "ru";
   }
 
   get lang() {
@@ -255,7 +283,7 @@ class I18nManager {
   setLanguage(lang) {
     if (translations[lang]) {
       this.currentLang = lang;
-      localStorage.setItem("photocheck_lang", lang);
+      try { localStorage.setItem("photocheck_lang", lang); } catch {}
       this.updateUI();
       document.dispatchEvent(new CustomEvent("languageChanged", { detail: { lang } }));
     }
@@ -267,6 +295,7 @@ class I18nManager {
   }
 
   updateUI() {
+    document.documentElement.lang = this.currentLang;
     document.querySelectorAll("[data-i18n]").forEach(el => {
       const key = el.getAttribute("data-i18n");
       const text = this.t(key);
