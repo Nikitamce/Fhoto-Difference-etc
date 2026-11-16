@@ -100,7 +100,10 @@ const translations = {
     dragOrClick: "или перетащите файл сюда",
     openPair: "Открыть пару файлов",
     btnCompare: "Сравнить",
-    btnExport: "Экспортировать ∨",
+    btnExport: "Скачать PNG",
+    compareReady: "Режим сравнения готов",
+    exportReady: "Снимок сравнения сохранён в PNG",
+    exportError: "Не удалось создать PNG-файл",
     cancel: "Отмена",
 
     // Manual alignment
@@ -221,7 +224,10 @@ const translations = {
     dragOrClick: "or drag & drop file here",
     openPair: "Open Pair of Files",
     btnCompare: "Compare",
-    btnExport: "Export ∨",
+    btnExport: "Export PNG",
+    compareReady: "Comparison view is ready",
+    exportReady: "Comparison snapshot saved as PNG",
+    exportError: "Could not create the PNG file",
     cancel: "Cancel",
 
     // Manual alignment
